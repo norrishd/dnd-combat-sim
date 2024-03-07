@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "dnd-combat-sim"
+version = "0.1.0"
+description = "Combat simulator for the world's greatest tabletop roleplaying game: Duungeons & Dragons 5e"
+authors = ["David Norrish <norrish.d@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.2"
+ruff = "^0.3.1"
+ipdb = "^0.13.13"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
