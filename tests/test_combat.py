@@ -1,6 +1,6 @@
 import pytest
 
-from dnd_combat_sim.attacks import MeleeAttack
+from dnd_combat_sim.attack import MeleeAttack
 from dnd_combat_sim.creature import Creature, Stats
 from dnd_combat_sim.game import Encounter1v1
 

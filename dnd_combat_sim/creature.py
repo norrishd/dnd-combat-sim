@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import logging
 import random
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum, auto
 from typing import Collection, Optional
 
-from .attacks import Attack, unarmed_strike
+from .attack import Attack
 from .dice import roll, roll_d20
+from .weapons import unarmed_strike
 
 
 class Ability(StrEnum):
@@ -70,9 +71,8 @@ class Stats:
     """Statistics for a creature."""
 
     ac: int
-    # TODO include size/infer from hit die or vice versa?
-    hit_die: int = 8
     level: int = 2
+    hit_die: int = 8  # TODO include size/infer from hit die or vice versa?
     speed: int = 30
     strength: int = 10
     dexterity: int = 10
@@ -80,20 +80,6 @@ class Stats:
     intelligence: int = 10
     wisdom: int = 10
     charisma: int = 10
-    use_average_hp: bool = False
-
-    def __post_init__(self):
-        if self.use_average_hp:
-            self.max_hp = int(
-                (roll(self.hit_die, use_average=True) + self.get_modifier(Ability.constitution))
-                * self.level
-            )
-        else:
-            self.max_hp = sum(
-                roll(self.hit_die, use_average=False) + self.get_modifier(Ability.constitution)
-                for _ in range(self.level)
-            )
-        self.hp = self.max_hp
 
     def get_modifier(self, ability: Ability) -> int:
         """Get the modifier for an ability score."""
@@ -110,9 +96,13 @@ class Creature:
         stats: Stats,
         skill_proficiencies: Optional[Collection[Skill]] = None,
         melee_attacks: list[Attack] = None,
+        spare_hand: bool = True,  # If True will use two-handed damage for versatile weapons
         ranged_attacks: list[Attack] = None,
         # spell_slots: dict[str, int] = None,
         # spells: list[Spell] = None,
+        attacks_per_action: int = 1,
+        multi_attacks_different: bool = True,
+        use_average_hp: bool = False,
         make_death_saves: bool = False,
     ) -> None:
         """Create a creature."""
@@ -120,19 +110,27 @@ class Creature:
         self.stats = stats
         self.melee_attacks = melee_attacks
         self.melee_attacks.append(unarmed_strike)
+        self.spare_hand = spare_hand
         self.ranged_attacks = ranged_attacks
-        # self.total_spell_slots = spell_slots
-        # self.spell_slots = spell_slots.copy() if spell_slots is not None else None
+        self.attacks_per_action = attacks_per_action
+        self.multi_attacks_different = multi_attacks_different
+        # self.total_spell_slots = spell_slots or {}
+        # self.spell_slots = total_spell_slots.copy() if spell_slots
         self.conditions = set()
         self.death_saves = {"successes": 0, "failures": 0}
         self.make_death_saves = make_death_saves
+        self.use_average_hp: bool = False
+
+        # Hit points and temporary hit points
+        self.hp = self.max_hp = self._roll_hit_points()
+        self.temp_hp: int = 0
 
     def __repr__(self) -> str:
-        return f"{self.name} ({self.stats.hp}/{self.stats.max_hp})"
+        return f"{self.name} ({self.hp}/{self.max_hp})"
 
     def choose_action(self) -> tuple[str, Optional[str]]:
         """Choose an action and bonus action for the turn."""
-        if self.stats.hp == 0:
+        if self.hp == 0:
             action = "death_saving_throw"
             bonus_action = None
         else:
@@ -163,22 +161,25 @@ class Creature:
 
         return (total, attack_roll, ability_mod + proficiency_bonus, self._is_crit(attack_roll))
 
-    def roll_damage(self, attack: Attack, melee: bool = True, crit: bool = False) -> int:
+    def roll_damage(self, attack: Attack, crit: bool = False) -> int:
         """Roll damage for an attack that has hit."""
-        num_dice = attack.damage.num_dice
-        if crit:
-            num_dice *= 2
+        damage = attack._damage
+        # Use two-handed damage if have a spare hand
+        if attack._two_handed_damage is not None and self.spare_hand:
+            damage = attack._two_handed_damage
 
-        dice_damage = sum(roll(attack.damage.die_size) for _ in range(num_dice))
-        str_damage = self.stats.get_modifier(Ability.strength)
-        dex_damage = self.stats.get_modifier(Ability.dexterity)
+        num_dice = damage.num_dice if not crit else damage.num_dice * 2
+        dice_damage = sum(roll(damage.die_size) for _ in range(num_dice))
+        modifier_damage = self._get_attack_modifier(attack)
 
-        if melee:
-            modifier_damage = max(str_damage, dex_damage) if attack.finesse else str_damage
-        else:
-            modifier_damage = dex_damage
+        bonus_damage = 0
+        if attack._bonus_damage is not None:
+            # TODO confirm if binus damage can get attack modifiers
+            damage = attack._bonus_damage
+            num_dice = damage.num_dice if not crit else damage.num_dice * 2
+            bonus_damage = sum(roll(attack._bonus_damage) for _ in range(num_dice))
 
-        return dice_damage + modifier_damage
+        return max(dice_damage + modifier_damage + bonus_damage, 0)
 
     def roll_death_save(self) -> tuple[int, str, dict[str, int]]:
         """Roll a death saving throw.
@@ -204,16 +205,26 @@ class Creature:
                 result = "critical failure"
                 self.death_saves["failures"] += 2
 
-            if self.death_saves["failures"] == 3:
-                result = "death"
-                self.conditions.discard(Condition.dying)
-                self.conditions.discard(Condition.unconscious)
-                self.conditions.add(Condition.dead)
+            if self.death_saves["failures"] >= 3:
+                result = self._die()
 
         return roll, result, self.death_saves
 
     def roll_initiative(self):
         return roll_d20() + self.stats.get_modifier(Ability.dexterity)
+
+    def spawn(self, name: Optional[str] = None) -> Creature:
+        new_creature = deepcopy(self)
+        if name is not None:
+            new_creature.name = name
+
+        # Roll new HP; reset spell slots, conditions and death saves
+        new_creature.hp = new_creature.temp_hp = self._roll_hit_points()
+        # new_creature.spell_slots = self.total_spell_slots.copy()
+        new_creature.conditions = set()
+        new_creature.death_saves = {"successes": 0, "failures": 0}
+
+        return new_creature
 
     def take_damage(self, damage: int, crit: bool = False) -> str:
         """Take damage from a hit and return a string indicating the outcome:
@@ -227,17 +238,17 @@ class Creature:
             - excess damage was at least 2x max HP
             - brought creature to 3+ failed death saving throws
         """
-        damage_taken = min(damage, self.stats.hp)
+        damage_taken = min(damage, self.hp)
         excess_damage = damage - damage_taken
 
         # Check for instant death
-        if excess_damage > self.stats.max_hp:
+        if excess_damage > self.max_hp:
             return self._die()
 
         # Take some damage, possibly get knocked out or killed
-        if self.stats.hp > 0:
-            self.stats.hp -= damage_taken
-            if self.stats.hp == 0:
+        if self.hp > 0:
+            self.hp -= damage_taken
+            if self.hp == 0:
                 if self.make_death_saves:
                     self.conditions.update([Condition.unconscious, Condition.dying])
                     return "knocked out"
@@ -286,3 +297,13 @@ class Creature:
         self.conditions.discard(Condition.dying)
         if wake_up:
             self.conditions.discard(Condition.unconscious)
+
+    def _roll_hit_points(self) -> int:
+        const_mod = self.stats.get_modifier(Ability.constitution)
+        if self.use_average_hp:
+            return int((roll(self.stats.hit_die, use_average=True) + const_mod) * self.stats.level)
+
+        hp = sum(
+            roll(self.stats.hit_die, use_average=False) + const_mod for _ in range(self.stats.level)
+        )
+        return max(hp, 1)

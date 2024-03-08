@@ -9,7 +9,7 @@ logging.basicConfig(format="", level=logging.INFO)
 logger.setLevel(logging.DEBUG)
 
 
-def log_and_pause(message: str, level: Union[int, str] = logging.INFO, sleep_time: float = 0.1):
+def log_and_pause(message: str, level: Union[int, str] = logging.INFO, sleep_time: float = 0.2):
     # print(message)
     logger.log(level, message)
     time.sleep(sleep_time)
@@ -41,7 +41,15 @@ class Encounter1v1:
                     target = (
                         self.creatures[1] if creature == self.creatures[0] else self.creatures[0]
                     )
-                    resolve_attack(creature, target)
+                    for _ in range(creature.attacks_per_action):
+                        # TODO: use multi_attacks_different
+                        resolve_attack(creature, target)
+                        if (
+                            Condition.dead in target.conditions
+                            or Condition.dying in target.conditions
+                            and not to_the_death
+                        ):
+                            return
 
                 elif action == "death_saving_throw":
                     value, result, total_successes_and_failures = creature.roll_death_save()
@@ -65,12 +73,13 @@ def resolve_attack(attacker: Creature, target: Creature):
     # 1. Attacker chooses which attack to use
     attack = attacker.choose_attack()
     attack_total, attack_roll, modifiers, is_crit = attacker.roll_attack(attack)
+    symbol = "+" if modifiers >= 0 else "-"
     msg = (
         f"{attacker.name} attacks {target.name} with {attack.name}: "
-        f"rolls {attack_total} ({attack_roll} + {modifiers}) - "
+        f"rolls {attack_total} ({attack_roll} {symbol} {abs(modifiers)}): "
     )
 
-    if attack_total < target.stats.ac and not is_crit:
+    if (attack_total < target.stats.ac and not is_crit) or attack_roll == 1:
         msg += "misses"
     else:
         damage = attacker.roll_damage(attack, crit=is_crit)
@@ -78,7 +87,7 @@ def resolve_attack(attacker: Creature, target: Creature):
 
         msg += f"{'CRITS' if is_crit else 'hits'} for {damage} damage."
         if damage_result == "alive":
-            msg += f" {target.stats.hp}/{target.stats.max_hp} remaining"
+            msg += f" {target.hp}/{target.max_hp} remaining"
         elif damage_result == "knocked out":
             msg += f"\n{target.name} is down!"
         elif damage_result == "dying":
