@@ -11,6 +11,8 @@ amphibious (bullywug) - can breathe air and water.
 
 Antimagic Susceptibility. The sword is incapacitated while in the area of an antimagic field. If targeted by dispel magic, the sword must succeed on a Constitution saving throw against the caster's spell save DC or fall unconscious for 1 minute.
 
+Dark Devotion. The cultist has advantage on saving throws against being charmed or frightened.
+
 False Appearance. While the sword remains motionless and isn't flying, it is indistinguishable from a normal sword.
 False Appearance (Object Form Only). While the mimic remains motionless, it is indistinguishable from an ordinary object.
 

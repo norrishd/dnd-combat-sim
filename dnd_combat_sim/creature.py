@@ -3,109 +3,13 @@ from __future__ import annotations
 import random
 from collections import defaultdict
 from copy import deepcopy
-from dataclasses import dataclass
-from enum import StrEnum, auto
-from pathlib import Path
 from typing import Collection, List, Optional, Union
 
-import pandas as pd
-
-from dnd_combat_sim import weapons
-from dnd_combat_sim.attack import Attack, DamageType, MeleeAttack, RangedAttack
+from dnd_combat_sim.attack import Attack, DamageType
 from dnd_combat_sim.conditions import Condition
 from dnd_combat_sim.dice import roll, roll_d20
+from dnd_combat_sim.rules import Abilities, Ability, Sense, Size, Skill, Type
 from dnd_combat_sim.utils import MONSTERS
-from dnd_combat_sim.weapons import unarmed_strike
-
-
-class Ability(StrEnum):
-    """Character abilities."""
-
-    str = auto()
-    dex = auto()
-    con = auto()
-    int = auto()
-    wis = auto()
-    cha = auto()
-
-
-@dataclass
-class Abilities:
-    """Class to store ability scores and modifiers."""
-
-    str: int
-    dex: int
-    con: int
-    int: int
-    wis: int
-    cha: int
-
-    def get_modifier(self, ability: Ability) -> int:
-        """Get the modifier for an ability score."""
-        score = getattr(self, ability.name)
-        return (score - 10) // 2
-
-
-class Sense(StrEnum):
-    """Creature senses."""
-
-    blindsight = auto()
-    darkvision = auto()
-    tremorsense = auto()
-    truesight = auto()
-
-
-class Size(StrEnum):
-    """Creature sizes."""
-
-    tiny = auto()
-    small = auto()
-    medium = auto()
-    large = auto()
-    huge = auto()
-    gargantuan = auto()
-
-
-class Skill(StrEnum):
-    """Character skills."""
-
-    acrobatics = auto()
-    animal_handling = auto()
-    arcana = auto()
-    athletics = auto()
-    deception = auto()
-    history = auto()
-    insight = auto()
-    intimidation = auto()
-    investigation = auto()
-    medicine = auto()
-    nature = auto()
-    perception = auto()
-    performance = auto()
-    persuasion = auto()
-    religion = auto()
-    sleight_of_hand = auto()
-    stealth = auto()
-    survival = auto()
-
-
-class Type(StrEnum):
-    """Creature types."""
-
-    aberration = auto()
-    beast = auto()
-    celestial = auto()
-    construct = auto()
-    dragon = auto()
-    elemental = auto()
-    fey = auto()
-    fiend = auto()
-    giant = auto()
-    humanoid = auto()
-    monstrosity = auto()
-    ooze = auto()
-    plant = auto()
-    undead = auto()
 
 
 class Creature:
@@ -126,13 +30,14 @@ class Creature:
         senses: Optional[Union[Collection[Sense], dict[Sense, int]]] = None,
         cr: Optional[float] = None,
         proficiency: Optional[int] = None,  # Can be inferred from CR
+        attack_bonus: Optional[int] = None,  # Overrides proficiency + mods if provided
         traits: List[str] = None,
-        attacks: list[Attack] = None,
+        attacks: list[Union[Attack, str]] = None,
         # actions: list[Action] = None,
-        has_shield: bool = False,  # If True, can use two-handed damage for versatile weapons
+        has_shield: bool = False,  # Relevant for using two-handed weapons
         num_attacks: int = 1,
         different_attacks: bool = True,
-        versatile: bool = True,  # If False, can't use two-handed damage for versatile weapons
+        num_hands: int = 2,
         speed: int = 30,
         speed_fly: int = 0,
         speed_hover: int = 0,
@@ -163,15 +68,16 @@ class Creature:
         assert cr is not None or proficiency is not None, "Must provide CR or proficiency"
         self.cr = cr
         self.proficiency = proficiency or max(cr - 1, 0) // 4 + 2
+        self.attack_bonus = attack_bonus
         self.traits = traits or []
         # Parse attacks
-        attacks = attacks or []
-        self.melee_attacks = [attack for attack in attacks if isinstance(attack, MeleeAttack)]
+        self.attacks = [
+            Attack.init(attack) if isinstance(attack, str) else attack for attack in attacks
+        ]
         if type == Type.humanoid:
-            self.melee_attacks.append(unarmed_strike)
-        self.ranged_attacks = [attack for attack in attacks if isinstance(attack, RangedAttack)]
+            self.attacks.append(Attack.init("unarmed strike"))
         self.has_shield = has_shield
-        self.versatile = versatile
+        self.num_hands = num_hands
         self.num_attacks = num_attacks
         self.different_attacks = different_attacks
         self.speed = speed
@@ -190,6 +96,7 @@ class Creature:
         self.hp = self.max_hp = self._roll_hit_points()
 
         # Combat stuff
+        self.attacks_used_this_turn = set()
         self.conditions = set()
         self.temp_hp: int = 0
         self.death_saves = {"successes": 0, "failures": 0}
@@ -204,10 +111,10 @@ class Creature:
         # saves = saves.split(",") if saves else []
         # skills = stats["skill_proficiencies"]
         # skills = skills.split(",") if skills else []
-        attacks = [getattr(weapons, attack) for attack in (stats["attacks"] or []).split(",")]
+        attacks = [Attack.init(attack) for attack in stats["attacks"].split(",")]
 
         return cls(
-            name=monster if name is None else name,
+            name=monster.title() if name is None else name.title(),
             ac=stats["ac"],
             hp=stats["hp"],
             abilities=[stats[ability] for ability in Ability.__members__],
@@ -234,41 +141,29 @@ class Creature:
 
         return action, bonus_action
 
-    def choose_attack(self) -> List[Attack]:
+    def choose_attack(self, targets: list[Creature]) -> Attack:
         """Choose an attack to use against a target.
 
         For now, simpply choose the attack with the highest expected damage, not factoring in
         likelihood to hit, advantage/disadvantage, resistances or anything else.
         """
-        options = defaultdict(list)
-        can_use_two_handed = self.versatile and not self.has_shield
-        for attack in self.melee_attacks:
-            expected = attack.expected_damage(two_handed=can_use_two_handed)
-            options[expected].append(attack)
+        attack_options = defaultdict(list)
+        available_hands = self.num_hands - 1 if self.has_shield else self.num_hands
+        two_handed = available_hands >= 2
+        for attack in self.attacks:
+            if (
+                attack.quantity < 1
+                or self.different_attacks
+                and attack in self.attacks_used_this_turn
+            ):
+                continue
+            expected_damage = attack.roll_damage(two_handed=two_handed, use_average=True)
+            attack_options[expected_damage].append(attack)
 
-        # Shuffle the order of attacks per damage level (mutates in-place)
-        for attacks in options.values():
-            random.shuffle(attacks)
-        # Sort from highest expectect damage to lowest
-        options = dict(sorted(options.items(), reverse=True))
-        best_options = options[list(options.keys())[0]]
-
-        if self.num_attacks == 1 or not self.different_attacks:
-            # Choose a random attack with equal highest expected damage
-            return random.choices(best_options, k=self.num_attacks)
-
-        # Multiple attacks and must be different
-        sorted_options = []
-        for options_set in options.values():
-            sorted_options.extend(options_set)
-            if len(sorted_options) >= self.num_attacks:
-                break
-
-        try:
-            sorted_options = sorted_options[: self.num_attacks]
-        except TypeError:
-            breakpoint()
-        return sorted_options
+        # Sort from highest expected damage to lowest
+        attack_options = dict(sorted(attack_options.items(), reverse=True))
+        best_options = attack_options[list(attack_options.keys())[0]]
+        return random.choice(best_options)
 
     def heal(self, amount: int) -> None:
         self.hp = min(self.hp + amount, self.max_hp)
@@ -278,6 +173,10 @@ class Creature:
 
         Return a tuple of (attack total, d20 roll, modifiers, whether is a crit)
         """
+        # If firing a projectile or throwing the weapon, decrease the count
+        if attack.ammunition or attack.thrown and not attack.melee:
+            attack.quantity -= 1
+
         # Roll to attack
         attack_roll = roll_d20()
 
@@ -290,24 +189,15 @@ class Creature:
 
     def roll_damage(self, attack: Attack, crit: bool = False) -> int:
         """Roll damage for an attack that has hit."""
-        damage = attack._damage
         # Use two-handed damage if have a spare hand
-        can_use_two_handed = self.versatile and not self.has_shield
-        if attack._two_handed_damage is not None and can_use_two_handed:
-            damage = attack._two_handed_damage
-
-        num_dice = damage.num_dice if not crit else damage.num_dice * 2
-        dice_damage = sum(roll(damage.die_size) for _ in range(num_dice))
+        available_hands = self.num_hands - 1 if self.has_shield else self.num_hands
+        can_use_two_handed = available_hands >= 2
+        dice_damage = attack.roll_damage(
+            two_handed=can_use_two_handed, crit=crit, use_average=False
+        )
         modifier_damage = self._get_attack_modifier(attack)
 
-        bonus_damage = 0
-        if attack._bonus_damage is not None:
-            # TODO confirm if binus damage can get attack modifiers
-            damage = attack._bonus_damage
-            num_dice = damage.num_dice if not crit else damage.num_dice * 2
-            bonus_damage = sum(roll(attack._bonus_damage) for _ in range(num_dice))
-
-        return max(dice_damage + modifier_damage + bonus_damage, 0)
+        return max(dice_damage + modifier_damage, 0)
 
     def roll_death_save(self) -> tuple[int, str, dict[str, int]]:
         """Roll a death saving throw.
@@ -412,7 +302,7 @@ class Creature:
 
         if attack.finesse:
             return max(str_modifier, dex_modifier)
-        if isinstance(attack, MeleeAttack):
+        if attack.melee:
             return str_modifier
 
         return dex_modifier

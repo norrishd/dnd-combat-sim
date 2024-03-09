@@ -1,6 +1,6 @@
 import logging
 
-from .attack import Attack, DamageType, MeleeAttack, RangedAttack
+from .attack import Attack, DamageType
 from .creature import Creature
 from .encounter import Encounter1v1
 

@@ -24,9 +24,9 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
 
 ## TODOs
 
+- thrown weapons/ammo
+- 1D movement
 - attacking
-  - ranged weapons
-  - thrown weapons
   - advantage, disadvantage
   - damage resistances and vulnerabilities
   - spells
@@ -40,7 +40,6 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
 - combat mechanics
   - factor in distance for ranged weapons
   - bonus actions
-  - 1D movement
   - 2D movement
   - conditions
   - traits
@@ -51,10 +50,14 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
 
 ## Showdown
 
-- commoner vs giant rat (0-1/8)
+- commoner vs giant rat (0-1/8):
+  - giant rat 89%
 - bandit vs kobold (1/8)
-- bullywug vs flying sword (1/4)
+  - bandit 78%
 - cultist vs guard (1/8)
+  - guard 73%
+- bullywug vs flying sword (1/4)
+  -
 - goblin vs skeleton (1/4)
 - gnoll vs hobgoblin (1/2)
 - zombie (1/4)

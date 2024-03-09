@@ -73,7 +73,7 @@ class Encounter1v1:
     def resolve_attack(self, attacker: Creature, target: Creature):
         """Resolve an attack from attacker to a target."""
         # 1. Attacker chooses which attack to use
-        attacks = attacker.choose_attack()
+        attacks = attacker.choose_attack([target])
         for attack in attacks:
             attack_total, attack_roll, modifiers, is_crit = attacker.roll_attack(attack)
             symbol = "+" if modifiers >= 0 else "-"
