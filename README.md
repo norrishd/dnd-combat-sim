@@ -25,23 +25,39 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
 ## TODOs
 
 - attacking
-  - [ ] ranged weapons
-  - [ ] thrown weapons
+  - ranged weapons
+  - thrown weapons
+  - advantage, disadvantage
+  - damage resistances and vulnerabilities
+  - spells
+  - AOE attacks
 - agent logic
+  - choose an attack, considering expected damage and chance of hitting
+  - choose an enemy to target \* smart attack to use
+  - creature memory (e.g. keep attacking same enemy round to round)
+  - 1D movement
+  - more tactical movement
+- combat mechanics
+  - factor in distance for ranged weapons
+  - bonus actions
+  - 1D movement
+  - 2D movement
+  - conditions
+  - traits
+  - non-attack actions
+  - skill checks
+  - saving throws
+- visualisation
 
-  - [ ] choose an attack, considering expected damage and chance of hitting
-  - [ ] choose an enemy to target \* smart attack to use
-  - [ ] creature memory (e.g. keep attacking same enemy round to round)
+## Showdown
 
-- [ ] factor in distance for ranged weapons
-- [ ] advantage, disadvantage
-- [ ] damage resistances and vulnerabilities
-- [ ] bonus actions
-- [ ] 1D movement
-  - [ ] 2D movement
-- [ ] status effects
-- [ ] non-attack actions
-- [ ] position and movement
-- [ ] visualisation
-- [ ] picking up items
-- [ ] spells?
+- commoner vs giant rat (0-1/8)
+- bandit vs kobold (1/8)
+- bullywug vs flying sword (1/4)
+- cultist vs guard (1/8)
+- goblin vs skeleton (1/4)
+- gnoll vs hobgoblin (1/2)
+- zombie (1/4)
+- orc vs lizardfolk (1/2)
+- half-ogre vs hippogriff (1)
+- mimic vs ogre (2)

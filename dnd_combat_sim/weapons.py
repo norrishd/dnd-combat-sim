@@ -70,7 +70,11 @@ javelin_strong = MeleeAttack("Javelin", damage="2d6 piercing", range=(30, 120))
 
 # Natural attacks
 beak_large = MeleeAttack("Beak", damage="1d10 piercing")
-bite_small = MeleeAttack("Bite", damage="1d4 piercing")
+bite_small = MeleeAttack("Bite", damage="1d4 piercing", finesse=True)
+bite_small_b = MeleeAttack("Bite", damage="1d4 bludgeoning", finesse=True)
 bite = MeleeAttack("Bite", damage="1d6 piercing")
 bite_big = MeleeAttack("Bite", damage="1d8 piercing")
-claws = MeleeAttack("Claws", damage="2d6 piercing")
+bite_big_acid = MeleeAttack("Bite", damage="1d8 piercing", bonus_damage="1d8 acid")
+claws_large = MeleeAttack("Claws", damage="2d6 piercing")
+pseudopod = MeleeAttack("Pseudopod", damage="1d8 bludgeoning")  # TODO apply adhesive (grappled)
+slam = MeleeAttack("Slam", damage="1d6 bludgeoning")

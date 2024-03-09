@@ -5,23 +5,54 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum, auto
-from typing import Collection, List, Optional
+from pathlib import Path
+from typing import Collection, List, Optional, Union
 
-from .attack import Attack, MeleeAttack, RangedAttack
-from .conditions import Condition
-from .dice import roll, roll_d20
-from .weapons import unarmed_strike
+import pandas as pd
+
+from dnd_combat_sim import weapons
+from dnd_combat_sim.attack import Attack, DamageType, MeleeAttack, RangedAttack
+from dnd_combat_sim.conditions import Condition
+from dnd_combat_sim.dice import roll, roll_d20
+from dnd_combat_sim.utils import MONSTERS
+from dnd_combat_sim.weapons import unarmed_strike
 
 
 class Ability(StrEnum):
     """Character abilities."""
 
-    strength = auto()
-    dexterity = auto()
-    constitution = auto()
-    intelligence = auto()
-    wisdom = auto()
-    charisma = auto()
+    str = auto()
+    dex = auto()
+    con = auto()
+    int = auto()
+    wis = auto()
+    cha = auto()
+
+
+@dataclass
+class Abilities:
+    """Class to store ability scores and modifiers."""
+
+    str: int
+    dex: int
+    con: int
+    int: int
+    wis: int
+    cha: int
+
+    def get_modifier(self, ability: Ability) -> int:
+        """Get the modifier for an ability score."""
+        score = getattr(self, ability.name)
+        return (score - 10) // 2
+
+
+class Sense(StrEnum):
+    """Creature senses."""
+
+    blindsight = auto()
+    darkvision = auto()
+    tremorsense = auto()
+    truesight = auto()
 
 
 class Size(StrEnum):
@@ -58,26 +89,23 @@ class Skill(StrEnum):
     survival = auto()
 
 
-@dataclass
-class Stats:
-    """Statistics for a creature."""
+class Type(StrEnum):
+    """Creature types."""
 
-    ac: int
-    level: int = 2
-    hit_die: int = 8  # TODO include size/infer from hit die or vice versa?
-    strength: int = 10
-    dexterity: int = 10
-    constitution: int = 10
-    intelligence: int = 10
-    wisdom: int = 10
-    charisma: int = 10
-    speed: int = 30
-    size: Size = Size.medium
-
-    def get_modifier(self, ability: Ability) -> int:
-        """Get the modifier for an ability score."""
-        score = getattr(self, ability.name)
-        return (score - 10) // 2
+    aberration = auto()
+    beast = auto()
+    celestial = auto()
+    construct = auto()
+    dragon = auto()
+    elemental = auto()
+    fey = auto()
+    fiend = auto()
+    giant = auto()
+    humanoid = auto()
+    monstrosity = auto()
+    ooze = auto()
+    plant = auto()
+    undead = auto()
 
 
 class Creature:
@@ -86,36 +114,111 @@ class Creature:
     def __init__(
         self,
         name: str,
-        stats: Stats,
+        ac: int,
+        hp: str,  # e.g. 5d6
+        abilities: Union[Abilities, list[int]],
+        save_proficiencies: Optional[Collection[Ability]] = None,
         skill_proficiencies: Optional[Collection[Skill]] = None,
-        melee_attacks: list[MeleeAttack] = None,
-        spare_hand: bool = True,  # If True will use two-handed damage for versatile weapons
-        ranged_attacks: list[RangedAttack] = None,
+        skill_expertises: Optional[Collection[Skill]] = None,
+        vulnerabilities: Optional[Collection[DamageType]] = None,
+        immunities: Optional[Collection[DamageType]] = None,
+        cond_immunities: Optional[Collection[Condition]] = None,
+        senses: Optional[Union[Collection[Sense], dict[Sense, int]]] = None,
+        cr: Optional[float] = None,
+        proficiency: Optional[int] = None,  # Can be inferred from CR
+        traits: List[str] = None,
+        attacks: list[Attack] = None,
+        # actions: list[Action] = None,
+        has_shield: bool = False,  # If True, can use two-handed damage for versatile weapons
+        num_attacks: int = 1,
+        different_attacks: bool = True,
+        versatile: bool = True,  # If False, can't use two-handed damage for versatile weapons
+        speed: int = 30,
+        speed_fly: int = 0,
+        speed_hover: int = 0,
+        speed_swim: int = 0,
         # spell_slots: dict[str, int] = None,
         # spells: list[Spell] = None,
-        attacks_per_action: int = 1,
-        multi_attacks_different: bool = True,
+        size: Optional[Size] = None,  # Can infer from hit die type
+        type: Optional[Type] = None,
+        subtype: Optional[str] = None,  # No mechanical meaning?
         make_death_saves: bool = False,
+        use_average_hp: bool = False,
     ) -> None:
-        """Create a creature."""
+        """Create a creature.
+
+        Args:
+        """
         self.name = name
-        self.stats = stats
-        self.melee_attacks = melee_attacks
-        self.melee_attacks.append(unarmed_strike)
-        self.spare_hand = spare_hand
-        self.ranged_attacks = ranged_attacks
-        self.attacks_per_action = attacks_per_action
-        self.multi_attacks_different = multi_attacks_different
+        self.ac = ac
+        self.num_hit_die, self.hit_die = map(int, hp.split("d"))
+        self.abilities = Abilities(*abilities) if isinstance(abilities, list) else abilities
+        self.saving_throw_proficiencies = save_proficiencies or set()
+        self.skill_proficiencies = skill_proficiencies or set()
+        self.skill_expertises = skill_expertises or set()
+        self.vulnerabilities = vulnerabilities or set()
+        self.immunities = immunities or set()
+        self.cond_immunities = cond_immunities or set()
+        self.senses = senses or set()
+        assert cr is not None or proficiency is not None, "Must provide CR or proficiency"
+        self.cr = cr
+        self.proficiency = proficiency or max(cr - 1, 0) // 4 + 2
+        self.traits = traits or []
+        # Parse attacks
+        attacks = attacks or []
+        self.melee_attacks = [attack for attack in attacks if isinstance(attack, MeleeAttack)]
+        if type == Type.humanoid:
+            self.melee_attacks.append(unarmed_strike)
+        self.ranged_attacks = [attack for attack in attacks if isinstance(attack, RangedAttack)]
+        self.has_shield = has_shield
+        self.versatile = versatile
+        self.num_attacks = num_attacks
+        self.different_attacks = different_attacks
+        self.speed = speed
+        self.speed_fly = speed_fly
+        self.speed_hover = speed_hover
+        self.speed_swim = speed_swim
         # self.total_spell_slots = spell_slots or {}
         # self.spell_slots = total_spell_slots.copy() if spell_slots
-        self.conditions = set()
-        self.death_saves = {"successes": 0, "failures": 0}
+        self.size = size
+        self.type_ = type
+        self.subtype = subtype
         self.make_death_saves = make_death_saves
-        self.use_average_hp: bool = False
+        self.use_average_hp = use_average_hp
 
         # Hit points and temporary hit points
         self.hp = self.max_hp = self._roll_hit_points()
+
+        # Combat stuff
+        self.conditions = set()
         self.temp_hp: int = 0
+        self.death_saves = {"successes": 0, "failures": 0}
+
+    @classmethod
+    def init(cls, monster: str, name: Optional[str] = None) -> Creature:
+        """Create a creature from a monster template."""
+        stats = MONSTERS.loc[monster]
+
+        # Parse fields that need it
+        # saves = stats["saving_throw_proficiencies"]
+        # saves = saves.split(",") if saves else []
+        # skills = stats["skill_proficiencies"]
+        # skills = skills.split(",") if skills else []
+        attacks = [getattr(weapons, attack) for attack in (stats["attacks"] or []).split(",")]
+
+        return cls(
+            name=monster if name is None else name,
+            ac=stats["ac"],
+            hp=stats["hp"],
+            abilities=[stats[ability] for ability in Ability.__members__],
+            # saving_throw_proficiencies=saves,
+            # skill_proficiencies=skills,
+            cr=stats["cr"],
+            proficiency=stats["proficiency"],
+            attacks=attacks,
+            has_shield=stats["has_shield"],
+            num_attacks=stats["num_attacks"],
+        )
 
     def __repr__(self) -> str:
         return f"{self.name} ({self.hp}/{self.max_hp})"
@@ -138,29 +241,34 @@ class Creature:
         likelihood to hit, advantage/disadvantage, resistances or anything else.
         """
         options = defaultdict(list)
+        can_use_two_handed = self.versatile and not self.has_shield
         for attack in self.melee_attacks:
-            expected = attack.expected_damage(two_handed=self.spare_hand)
+            expected = attack.expected_damage(two_handed=can_use_two_handed)
             options[expected].append(attack)
 
-        # Shuffle the order of attacks per damage level
-        for expected_damage, attacks in options.items():
+        # Shuffle the order of attacks per damage level (mutates in-place)
+        for attacks in options.values():
             random.shuffle(attacks)
         # Sort from highest expectect damage to lowest
         options = dict(sorted(options.items(), reverse=True))
         best_options = options[list(options.keys())[0]]
 
-        if self.attacks_per_action == 1 or not self.multi_attacks_different:
+        if self.num_attacks == 1 or not self.different_attacks:
             # Choose a random attack with equal highest expected damage
-            return random.choices(best_options, k=self.attacks_per_action)
+            return random.choices(best_options, k=self.num_attacks)
 
         # Multiple attacks and must be different
         sorted_options = []
         for options_set in options.values():
             sorted_options.extend(options_set)
-            if len(sorted_options) >= self.attacks_per_action:
+            if len(sorted_options) >= self.num_attacks:
                 break
 
-        return sorted_options[: self.attacks_per_action]
+        try:
+            sorted_options = sorted_options[: self.num_attacks]
+        except TypeError:
+            breakpoint()
+        return sorted_options
 
     def heal(self, amount: int) -> None:
         self.hp = min(self.hp + amount, self.max_hp)
@@ -174,7 +282,7 @@ class Creature:
         attack_roll = roll_d20()
 
         ability_mod = self._get_attack_modifier(attack)
-        proficiency_bonus = self._get_proficiency() if attack.proficient else 0
+        proficiency_bonus = self.proficiency if attack.proficient else 0
 
         total = attack_roll + ability_mod + proficiency_bonus
 
@@ -184,7 +292,8 @@ class Creature:
         """Roll damage for an attack that has hit."""
         damage = attack._damage
         # Use two-handed damage if have a spare hand
-        if attack._two_handed_damage is not None and self.spare_hand:
+        can_use_two_handed = self.versatile and not self.has_shield
+        if attack._two_handed_damage is not None and can_use_two_handed:
             damage = attack._two_handed_damage
 
         num_dice = damage.num_dice if not crit else damage.num_dice * 2
@@ -230,7 +339,7 @@ class Creature:
         return roll, result, self.death_saves
 
     def roll_initiative(self):
-        return roll_d20() + self.stats.get_modifier(Ability.dexterity)
+        return roll_d20() + self.abilities.get_modifier(Ability.dex)
 
     def spawn(self, name: Optional[str] = None) -> Creature:
         new_creature = deepcopy(self)
@@ -298,15 +407,20 @@ class Creature:
         - dexterity for ranged attacks
           - or strength for thrown weapons, or either for thrown finesse weapons
         """
-        str_modifier = self.stats.get_modifier(Ability.strength)
-        dex_modifier = self.stats.get_modifier(Ability.dexterity)
-        if not attack.finesse:
+        str_modifier = self._get_modifier(Ability.str)
+        dex_modifier = self._get_modifier(Ability.dex)
+
+        if attack.finesse:
+            return max(str_modifier, dex_modifier)
+        if isinstance(attack, MeleeAttack):
             return str_modifier
 
-        return max(str_modifier, dex_modifier)
+        return dex_modifier
 
-    def _get_proficiency(self) -> int:
-        return (self.stats.level - 1) // 4 + 2
+    def _get_modifier(self, ability: Ability) -> int:
+        """Get the modifier for an ability score."""
+        score = getattr(self.abilities, ability.name)
+        return (score - 10) // 2
 
     def _is_crit(self, roll: int):
         return roll == 20
@@ -318,11 +432,9 @@ class Creature:
             self.conditions.discard(Condition.unconscious)
 
     def _roll_hit_points(self) -> int:
-        const_mod = self.stats.get_modifier(Ability.constitution)
+        const_mod = self.abilities.get_modifier(Ability.con)
         if self.use_average_hp:
-            return int((roll(self.stats.hit_die, use_average=True) + const_mod) * self.stats.level)
+            return int((roll(self.hit_die, use_average=True) + const_mod) * self.num_hit_die)
 
-        hp = sum(
-            roll(self.stats.hit_die, use_average=False) + const_mod for _ in range(self.stats.level)
-        )
+        hp = sum(roll(self.hit_die, use_average=False) + const_mod for _ in range(self.num_hit_die))
         return max(hp, 1)

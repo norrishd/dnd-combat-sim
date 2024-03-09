@@ -1,7 +1,10 @@
+import abc
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import Optional
+
+from dnd_combat_sim.dice import roll
 
 DAMAGE_PATTERN = re.compile(r"([0-9]+)d([0-9]+) (.*)")
 
@@ -42,8 +45,8 @@ class Property(StrEnum):
 
 
 @dataclass
-class Attack:
-    """An attack that a creature can make."""
+class Attack(abc.ABC):
+    """Base class for an attack that a creature can make."""
 
     name: str
     reach: Optional[int] = None  # melee attack if not None
@@ -60,9 +63,11 @@ class Attack:
     heavy: bool = False
     light: bool = False
     loading: bool = False
+    quantity: Optional[int] = None
 
     def expected_damage(self, two_handed: bool = False) -> float:
         """Return the average damage of the attack."""
+        expected = 0
         if two_handed and self._two_handed_damage is not None:
             expected = self._two_handed_damage.expected_damage()
         elif self._damage is not None:
@@ -71,6 +76,8 @@ class Attack:
         if self._bonus_damage is not None:
             expected += self._bonus_damage.expected_damage()
 
+        if expected == 0:
+            breakpoint()
         return expected
 
     def __post_init__(self) -> None:
@@ -78,6 +85,8 @@ class Attack:
             self._damage = self._parse_damage(self.damage)
         if self.two_handed_damage:
             self._two_handed_damage = self._parse_damage(self.two_handed_damage)
+        if self.bonus_damage:
+            self._bonus_damage = self._parse_damage(self.bonus_damage)
 
     def _parse_damage(self, damage: str) -> Damage:
         """Parse the damage string into a Damage object."""
@@ -108,7 +117,7 @@ class MeleeAttack(Attack):
         two_handed_damage: Optional[str] = None,
         bonus_damage: Optional[str] = None,
         reach: int = 5,
-        range: Optional[tuple[int]] = None,  # Indicates can be thrown
+        range: Optional[tuple[int]] = None,  # If set, indicates weapon can be thrown
         proficient: bool = True,
         finesse: bool = False,
         light: bool = False,
@@ -139,11 +148,15 @@ class RangedAttack(Attack):
         thrown: bool = False,
         heavy: bool = False,
         loading: bool = False,
+        quantity: Optional[int] = None,
     ):
         """Create a ranged attack.
 
         If `thrown` is False, weapon is assumed to use ammunition.
         """
+        if quantity is None:
+            # See introduction of the Monster Manual
+            quantity = roll("2d4") if thrown else roll("2d10")
 
         super().__init__(
             name=name,
@@ -154,4 +167,5 @@ class RangedAttack(Attack):
             ammunition=not thrown,
             heavy=heavy,
             loading=loading,
+            quantity=quantity,
         )

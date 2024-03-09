@@ -4,10 +4,7 @@ from typing import Union
 
 from dnd_combat_sim.creature import Condition, Creature
 
-logging.basicConfig(format="", level=logging.DEBUG)
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.DEBUG)
-logger = logging.getLogger("game")
+logger = logging.getLogger(__name__)
 
 
 def log_and_pause(message: str, level: Union[int, str] = logging.INFO, sleep_time: float = 0.0):
@@ -85,7 +82,7 @@ class Encounter1v1:
                 f"rolls {attack_total} ({attack_roll} {symbol} {abs(modifiers)}): "
             )
 
-            if (attack_total < target.stats.ac and not is_crit) or attack_roll == 1:
+            if (attack_total < target.ac and not is_crit) or attack_roll == 1:
                 msg += "misses"
                 log_and_pause(msg, level=logging.DEBUG)
             else:
@@ -115,9 +112,9 @@ class MultiEncounter1v1:
     def run(self, to_the_death: bool = True):
         """Run an encounter between two creatures to the death."""
         if 3 < self.num_runs <= 10:
-            logging.getLogger("game").setLevel(logging.INFO)
+            logging.getLogger().setLevel(logging.INFO)
         elif self.num_runs > 10:
-            logging.getLogger("game").setLevel(logging.WARNING)
+            logging.getLogger().setLevel(logging.WARNING)
 
         for i in range(self.num_runs):
             log_and_pause(f"\n*** Encounter {i + 1} ***")
