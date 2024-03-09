@@ -7,9 +7,9 @@ import pandas as pd
 # and will change in a future version. Call result.infer_objects(copy=False) instead.
 pd.set_option("future.no_silent_downcasting", True)
 
-ATTACKS_PATH = Path(__file__).parent / "attacks.csv"
-MONSTERS_PATH = Path(__file__).parent / "monsters.csv"
-WEAPONS_PATH = Path(__file__).parent / "weapons.csv"
+ATTACKS_PATH = Path(__file__).parent / "content/attacks.csv"
+MONSTERS_PATH = Path(__file__).parent / "content/monsters.csv"
+WEAPONS_PATH = Path(__file__).parent / "content/weapons.csv"
 
 
 def load_attacks(*args, **kwargs):
@@ -22,7 +22,7 @@ def load_attacks(*args, **kwargs):
     attacks["is_weapon"] = False
     attacks["type"] = "monster"
 
-    attacks = pd.concat([attacks, weapons]).set_index("name")
+    attacks = pd.concat([attacks, weapons]).set_index("key")
 
     attacks = attacks.fillna(
         {

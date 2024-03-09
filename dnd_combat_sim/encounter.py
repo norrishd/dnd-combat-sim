@@ -36,6 +36,7 @@ class Encounter1v1:
         while not any(Condition.dead in creature.conditions for creature in self.creatures):
             log_and_pause(f"\n* Round {round} *", level=logging.DEBUG)
             for creature in initiative:
+                creature.start_turn()
                 # Choose what to do
                 action, bonus_action = creature.choose_action()
 
@@ -73,8 +74,8 @@ class Encounter1v1:
     def resolve_attack(self, attacker: Creature, target: Creature):
         """Resolve an attack from attacker to a target."""
         # 1. Attacker chooses which attack to use
-        attacks = attacker.choose_attack([target])
-        for attack in attacks:
+        for _ in range(attacker.num_attacks):
+            attack = attacker.choose_attack([target])
             attack_total, attack_roll, modifiers, is_crit = attacker.roll_attack(attack)
             symbol = "+" if modifiers >= 0 else "-"
             msg = (

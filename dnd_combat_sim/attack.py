@@ -82,17 +82,16 @@ class Attack:
     @classmethod
     def init(
         cls,
-        name: str,
+        key: str,
         proficient: bool = True,
         quantity: Optional[int] = None,
         size: Size = Size.medium,
     ) -> Attack:
-        # Determine whether weapon or monster attack
-
-        attack = ATTACKS.loc[name]
+        """Initialise an attack from _attacks.csv_."""
+        attack = ATTACKS.loc[key]
 
         return cls(
-            name=name,
+            name=attack["name"],
             melee=attack["melee"],
             damage=attack["damage"],
             two_handed_damage=attack["two_handed_damage"],

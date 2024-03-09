@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random
 from collections import defaultdict
 from copy import deepcopy
@@ -10,6 +11,8 @@ from dnd_combat_sim.conditions import Condition
 from dnd_combat_sim.dice import roll, roll_d20
 from dnd_combat_sim.rules import Abilities, Ability, Sense, Size, Skill, Type
 from dnd_combat_sim.utils import MONSTERS
+
+logger = logging.getLogger(__name__)
 
 
 class Creature:
@@ -154,7 +157,7 @@ class Creature:
             if (
                 attack.quantity < 1
                 or self.different_attacks
-                and attack in self.attacks_used_this_turn
+                and attack.name in self.attacks_used_this_turn
             ):
                 continue
             expected_damage = attack.roll_damage(two_handed=two_handed, use_average=True)
@@ -168,17 +171,23 @@ class Creature:
     def heal(self, amount: int) -> None:
         self.hp = min(self.hp + amount, self.max_hp)
 
-    def roll_attack(self, attack: Attack) -> tuple[int, int, int, bool]:
+    def roll_attack(
+        self, attack: Attack, advantage: bool = False, disadvantage: bool = False
+    ) -> tuple[int, int, int, bool]:
         """Make an attack roll.
 
         Return a tuple of (attack total, d20 roll, modifiers, whether is a crit)
         """
+        self.attacks_used_this_turn.add(attack.name)
         # If firing a projectile or throwing the weapon, decrease the count
-        if attack.ammunition or attack.thrown and not attack.melee:
+        if not attack.melee:  # TODO or attack.melee and throwing
             attack.quantity -= 1
+            if attack.quantity == 0:
+                span = "ammo for" if attack.ammunition else ""
+                logger.debug(f"{self.name} used up last {span} {attack.name}!")
 
         # Roll to attack
-        attack_roll = roll_d20()
+        attack_roll = roll_d20(advantage=advantage, disadvantage=disadvantage)
 
         ability_mod = self._get_attack_modifier(attack)
         proficiency_bonus = self.proficiency if attack.proficient else 0
@@ -243,6 +252,9 @@ class Creature:
         new_creature.death_saves = {"successes": 0, "failures": 0}
 
         return new_creature
+
+    def start_turn(self) -> None:
+        self.attacks_used_this_turn = set()
 
     def take_damage(self, damage: int, crit: bool = False) -> str:
         """Take damage from a hit and return a string indicating the outcome:

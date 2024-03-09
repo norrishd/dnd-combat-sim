@@ -13,6 +13,7 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
   - [x] death saving throws
   - [x] auto-failure for damage while down
   - [x] multiple attacks per turn
+  - [x] ammunition
 - agent logic
   - [x] choose best attack(s) using expected value, assuming a hit
 - simulation
@@ -24,20 +25,20 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
 
 ## TODOs
 
-- thrown weapons/ammo
 - 1D movement
+- thrown weapons
 - attacking
   - advantage, disadvantage
   - damage resistances and vulnerabilities
   - spells
   - AOE attacks
 - agent logic
-  - choose an attack, considering expected damage and chance of hitting
-  - choose an enemy to target \* smart attack to use
+  - simple movement: moving into range
+  - choose an enemy to target x smart attack to use
   - creature memory (e.g. keep attacking same enemy round to round)
-  - 1D movement
-  - more tactical movement
+  - tactical movement
 - combat mechanics
+  - 1D movement
   - factor in distance for ranged weapons
   - bonus actions
   - 2D movement
@@ -57,8 +58,10 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
 - cultist vs guard (1/8)
   - guard 73%
 - bullywug vs flying sword (1/4)
-  -
+  - flying sword 69%
 - goblin vs skeleton (1/4)
+  - skeleton 68%\*
+  - haven't implemented nimble escape
 - gnoll vs hobgoblin (1/2)
 - zombie (1/4)
 - orc vs lizardfolk (1/2)
