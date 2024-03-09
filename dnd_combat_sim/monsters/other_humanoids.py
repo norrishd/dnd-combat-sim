@@ -14,8 +14,8 @@ from dnd_combat_sim.weapons import (
 
 bullywug = Creature(
     "Bullywug",
-    stats=parse_stats(15, "2d8", [10, 12, 11, 9, 9, 7], speed=20),
-    melee_attacks=[spear],
+    stats=parse_stats(15, "2d8", [12, 12, 13, 7, 10, 7], speed=20),
+    melee_attacks=[MeleeAttack("Bite", "1d4 bludgeoning"), spear],
     attacks_per_action=2,
     spare_hand=False,
 )

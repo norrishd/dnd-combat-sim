@@ -69,5 +69,8 @@ heavy_club = MeleeAttack("Heavy Club", damage="1d6 bludgeoning")
 javelin_strong = MeleeAttack("Javelin", damage="2d6 piercing", range=(30, 120))
 
 # Natural attacks
+beak_large = MeleeAttack("Beak", damage="1d10 piercing")
 bite_small = MeleeAttack("Bite", damage="1d4 piercing")
 bite = MeleeAttack("Bite", damage="1d6 piercing")
+bite_big = MeleeAttack("Bite", damage="1d8 piercing")
+claws = MeleeAttack("Claws", damage="2d6 piercing")

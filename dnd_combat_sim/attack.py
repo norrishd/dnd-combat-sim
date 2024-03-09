@@ -28,6 +28,10 @@ class Damage:
     die_size: int
     damage_type: DamageType
 
+    def expected_damage(self) -> float:
+        """Return the expected damage of the attack."""
+        return (self.die_size + 1) / 2 * self.num_dice
+
 
 class Property(StrEnum):
     ammunition = auto()
@@ -56,6 +60,18 @@ class Attack:
     heavy: bool = False
     light: bool = False
     loading: bool = False
+
+    def expected_damage(self, two_handed: bool = False) -> float:
+        """Return the average damage of the attack."""
+        if two_handed and self._two_handed_damage is not None:
+            expected = self._two_handed_damage.expected_damage()
+        elif self._damage is not None:
+            expected = self._damage.expected_damage()
+
+        if self._bonus_damage is not None:
+            expected += self._bonus_damage.expected_damage()
+
+        return expected
 
     def __post_init__(self) -> None:
         if self.damage:

@@ -33,7 +33,6 @@ def simple_monster(
     melee_attacks: Optional[list[MeleeAttack]] = None,
     ranged_attacks: Optional[list[RangedAttack]] = None,
     speed: int = 30,
-    use_average_hp: bool = False,
     make_death_saves: bool = False,
 ):
     """Create a simple monster with basic stats and attacks."""
@@ -42,6 +41,5 @@ def simple_monster(
         stats=parse_stats(ac, hp, stats, speed),
         melee_attacks=melee_attacks,
         ranged_attacks=ranged_attacks,
-        use_average_hp=use_average_hp,
         make_death_saves=make_death_saves,
     )

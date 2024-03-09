@@ -1,3 +1,3 @@
 from .attack import Attack, DamageType, MeleeAttack, RangedAttack
 from .creature import Creature, Stats
-from .game import Encounter1v1
+from .encounter import Encounter1v1

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import random
+from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum, auto
-from typing import Collection, Optional
+from typing import Collection, List, Optional
 
-from .attack import Attack
+from .attack import Attack, MeleeAttack, RangedAttack
+from .conditions import Condition
 from .dice import roll, roll_d20
 from .weapons import unarmed_strike
 
@@ -22,25 +24,15 @@ class Ability(StrEnum):
     charisma = auto()
 
 
-class Condition(StrEnum):
-    """Possible conditions."""
+class Size(StrEnum):
+    """Creature sizes."""
 
-    blinded = auto()
-    charmed = auto()
-    deafened = auto()
-    frightened = auto()
-    grappled = auto()
-    incapacitated = auto()
-    invisible = auto()
-    paralyzed = auto()
-    petrified = auto()
-    poisoned = auto()
-    prone = auto()
-    restrained = auto()
-    stunned = auto()
-    unconscious = auto()
-    dying = auto()
-    dead = auto()
+    tiny = auto()
+    small = auto()
+    medium = auto()
+    large = auto()
+    huge = auto()
+    gargantuan = auto()
 
 
 class Skill(StrEnum):
@@ -73,13 +65,14 @@ class Stats:
     ac: int
     level: int = 2
     hit_die: int = 8  # TODO include size/infer from hit die or vice versa?
-    speed: int = 30
     strength: int = 10
     dexterity: int = 10
     constitution: int = 10
     intelligence: int = 10
     wisdom: int = 10
     charisma: int = 10
+    speed: int = 30
+    size: Size = Size.medium
 
     def get_modifier(self, ability: Ability) -> int:
         """Get the modifier for an ability score."""
@@ -95,14 +88,13 @@ class Creature:
         name: str,
         stats: Stats,
         skill_proficiencies: Optional[Collection[Skill]] = None,
-        melee_attacks: list[Attack] = None,
+        melee_attacks: list[MeleeAttack] = None,
         spare_hand: bool = True,  # If True will use two-handed damage for versatile weapons
-        ranged_attacks: list[Attack] = None,
+        ranged_attacks: list[RangedAttack] = None,
         # spell_slots: dict[str, int] = None,
         # spells: list[Spell] = None,
         attacks_per_action: int = 1,
         multi_attacks_different: bool = True,
-        use_average_hp: bool = False,
         make_death_saves: bool = False,
     ) -> None:
         """Create a creature."""
@@ -139,12 +131,39 @@ class Creature:
 
         return action, bonus_action
 
-    def choose_attack(self) -> Attack:
-        """Choose an attack to use against a target."""
-        return random.choice(self.melee_attacks)
+    def choose_attack(self) -> List[Attack]:
+        """Choose an attack to use against a target.
+
+        For now, simpply choose the attack with the highest expected damage, not factoring in
+        likelihood to hit, advantage/disadvantage, resistances or anything else.
+        """
+        options = defaultdict(list)
+        for attack in self.melee_attacks:
+            expected = attack.expected_damage(two_handed=self.spare_hand)
+            options[expected].append(attack)
+
+        # Shuffle the order of attacks per damage level
+        for expected_damage, attacks in options.items():
+            random.shuffle(attacks)
+        # Sort from highest expectect damage to lowest
+        options = dict(sorted(options.items(), reverse=True))
+        best_options = options[list(options.keys())[0]]
+
+        if self.attacks_per_action == 1 or not self.multi_attacks_different:
+            # Choose a random attack with equal highest expected damage
+            return random.choices(best_options, k=self.attacks_per_action)
+
+        # Multiple attacks and must be different
+        sorted_options = []
+        for options_set in options.values():
+            sorted_options.extend(options_set)
+            if len(sorted_options) >= self.attacks_per_action:
+                break
+
+        return sorted_options[: self.attacks_per_action]
 
     def heal(self, amount: int) -> None:
-        self.hp = min(self.hp + amount, self.stats.max_hp)
+        self.hp = min(self.hp + amount, self.max_hp)
 
     def roll_attack(self, attack: Attack) -> tuple[int, int, int, bool]:
         """Make an attack roll.
@@ -219,7 +238,7 @@ class Creature:
             new_creature.name = name
 
         # Roll new HP; reset spell slots, conditions and death saves
-        new_creature.hp = new_creature.temp_hp = self._roll_hit_points()
+        new_creature.hp = new_creature.max_hp = self._roll_hit_points()
         # new_creature.spell_slots = self.total_spell_slots.copy()
         new_creature.conditions = set()
         new_creature.death_saves = {"successes": 0, "failures": 0}
