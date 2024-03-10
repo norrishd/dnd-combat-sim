@@ -137,7 +137,9 @@ class Creature:
         self.death_saves = {"successes": 0, "failures": 0}
 
     @classmethod
-    def init(cls, monster: str, name: Optional[str] = None) -> Creature:
+    def init(
+        cls, monster: str, name: Optional[str] = None, make_death_saves: bool = False
+    ) -> Creature:
         """Create a creature from a monster template."""
         stats = MONSTERS.loc[monster]
 
@@ -164,6 +166,7 @@ class Creature:
             resistances=stats["resistances"],
             vulnerabilities=stats["vulnerabilities"],
             immunities=stats["immunities"],
+            make_death_saves=make_death_saves,
         )
 
     def __repr__(self) -> str:
@@ -212,13 +215,13 @@ class Creature:
         """Modify the damage dealt by an attack."""
         for dtype in attack_damage.damages:
             if dtype in self.immunities:
-                logger.debug(f"{self.name} is immune to {str(dtype)} damage.")
+                # logger.debug(f"{self.name} is immune to {str(dtype)} damage.")
                 attack_damage.damages.pop(dtype)
             elif dtype in self.vulnerabilities:
-                logger.debug(f"{self.name} is vulnerable to {str(dtype)} damage.")
+                # logger.debug(f"{self.name} is vulnerable to {str(dtype)} damage.")
                 attack_damage.damages[dtype] *= 2
             elif dtype in self.resistances:
-                logger.debug(f"{self.name} is resistant to {str(dtype)} damage.")
+                # logger.debug(f"{self.name} is resistant to {str(dtype)} damage.")
                 attack_damage.damages[dtype] //= 2
 
         # TODO handle conditions and traits
@@ -239,7 +242,7 @@ class Creature:
             attack.quantity -= 1
             if attack.quantity == 0:
                 span = "ammo for" if attack.ammunition else ""
-                logger.debug(f"{self.name} used up last {span} {attack.name}!")
+                logger.debug(f"{self.name} using up last {span} {attack.name}!")
 
         # Roll to attack
         attack_roll = roll_d20(advantage=advantage, disadvantage=disadvantage)

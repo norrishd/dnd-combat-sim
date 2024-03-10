@@ -4,7 +4,7 @@ from typing import Union
 
 from dnd_combat_sim.attack import AttackRoll, DamageOutcome
 from dnd_combat_sim.creature import Condition, Creature
-from dnd_combat_sim.trait import Battle, Team, Trait
+from dnd_combat_sim.trait import Battle, OnRollDamageTrait, OnTakeDamageTrait, Team, Trait
 from dnd_combat_sim.traits import TRAITS, attach_traits
 
 logger = logging.getLogger(__name__)
@@ -25,10 +25,8 @@ class Encounter1v1:
     def run(self, to_the_death: bool = True) -> Creature:
         """Run an encounter between two creatures to the death, returning the winner."""
         # Reset creatures
-        for i, creature in enumerate(self.creatures):
-            new_creature = creature.spawn()
-            attach_traits(new_creature)
-            self.creatures[i] = new_creature
+        for creature in self.creatures:
+            attach_traits(creature)
 
         # Roll initiative and determine order
         initiative = {creature: creature.roll_initiative() for creature in self.creatures}
@@ -43,11 +41,12 @@ class Encounter1v1:
         while not any(Condition.dead in creature.conditions for creature in self.creatures):
             log_and_pause(f"\n* Round {round} *", level=logging.DEBUG)
             for creature in initiative:
+                enemy = self.creatures[1] if creature == self.creatures[0] else self.creatures[0]
                 # Start of turn - reset counters, maybe roll death save or try to shake off a
                 # temporary condition
                 creature.start_turn()
                 if Condition.dead in creature.conditions:
-                    break
+                    return enemy
 
                 # Don't get a turn if have any of these conditions
                 if any(
@@ -67,13 +66,10 @@ class Encounter1v1:
 
                 # Make an attack
                 if action == "attack":
-                    target = (
-                        self.creatures[1] if creature == self.creatures[0] else self.creatures[0]
-                    )
-                    self.resolve_attack(creature, target)
+                    self.resolve_attack(creature, enemy)
                     if (
-                        Condition.dead in target.conditions
-                        or Condition.dying in target.conditions
+                        Condition.dead in enemy.conditions
+                        or Condition.dying in enemy.conditions
                         and not to_the_death
                     ):
                         return creature
@@ -85,33 +81,44 @@ class Encounter1v1:
 
     def resolve_attack(self, attacker: Creature, target: Creature):
         """Resolve an attack from attacker to a target."""
-        # 1. Attacker chooses which attack to use
         for _ in range(attacker.num_attacks):
+            # 1. Attacker chooses which attack to use
             attack = attacker.choose_attack([target])
 
+            # 2. Make attack roll
             attack_roll = attacker.roll_attack(attack)
             msg = f"{attacker.name} attacks {target.name} with {attack.name}: rolls {attack_roll}: "
 
+            # 3. Check if attack hits (for now just considering AC, crits and crit fails)
             is_hit = self.check_if_hits(target, attack_roll)
             if not is_hit:
                 log_and_pause(f"{msg}misses", level=logging.DEBUG)
                 return
 
-            # Attack hits, calculate damage then see if target modifies it, e.g via resistance
+            # 4. If hits calculate damage, and check for trait modifiers, e.g. Martial advantage
             attack_damage = attacker.roll_damage(attack, crit=attack_roll.is_crit)
+            for trait in attacker.traits:
+                if isinstance(trait, OnRollDamageTrait):
+                    damage_result = trait.on_roll_damage(
+                        attacker,
+                        damage_roll=attack_damage,
+                        battle=self.battle,
+                    )
+            # 5. See if target modifies damage, e.g. from resistance or vulnerability
             modified_damage = target.modify_damage(attack_damage)
             msg += f"{'CRITS' if attack_roll.is_crit else 'hits'} for {modified_damage} damage."
             log_and_pause(msg, level=logging.DEBUG)
 
             if modified_damage.total > 0:
+                # 6. Actually do the damage, then handle traits like undead fortitude
                 damage_result = target.take_damage(attack_damage, crit=attack_roll.is_crit)
-                # Check if creature has traits like undead fortitude
-                for trait in self._get_traits(target, "on_take_damage"):
-                    damage_result = trait.on_take_damage(
-                        target,
-                        attack_damage,
-                        damage_result,
-                    )
+                for trait in target.traits:
+                    if isinstance(trait, OnTakeDamageTrait):
+                        damage_result = trait.on_take_damage(
+                            target,
+                            attack_damage,
+                            damage_result,
+                        )
 
             if damage_result == DamageOutcome.knocked_out:
                 log_and_pause(f"{target.name} is down!", level=logging.DEBUG)
@@ -119,8 +126,6 @@ class Encounter1v1:
                 log_and_pause(f"{target.name} is on death's door", level=logging.DEBUG)
             elif damage_result in {DamageOutcome.dead, DamageOutcome.instant_death}:
                 log_and_pause(f"{target.name} is DEAD!", level=logging.DEBUG)
-
-            if damage_result == "dead":
                 return
 
     def check_if_hits(self, target: Creature, attack_roll: AttackRoll):
@@ -133,15 +138,6 @@ class Encounter1v1:
         if (total < target.ac and not attack_roll.is_crit) or attack_roll.rolled == 1:
             return False
         return True
-
-    def _get_traits(self, creature: Creature, method: str) -> list[Trait]:
-        """Get all traits that apply to a method."""
-        traits = []
-        for trait_name in creature.traits:
-            if trait_name in TRAITS and getattr(TRAITS[trait_name], method) is not None:
-                traits.append(TRAITS[trait_name])
-
-        return traits
 
 
 class MultiEncounter1v1:

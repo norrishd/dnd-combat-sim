@@ -9,11 +9,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run a combat simulation.")
     parser.add_argument("creature1", nargs="?", default="orc", choices=choices)
     parser.add_argument("creature2", nargs="?", default="bullywug", choices=choices)
+    parser.add_argument("-d", "--death_saves", action="store_true")
     parser.add_argument("-n", "--num_runs", type=int, default=1)
     args = parser.parse_args()
 
-    creature1 = Creature.init(args.creature1)
-    creature2 = Creature.init(args.creature2)
+    creature1 = Creature.init(args.creature1, make_death_saves=args.death_saves)
+    creature2 = Creature.init(args.creature2, make_death_saves=args.death_saves)
 
     encounter = MultiEncounter1v1(creature1, creature2, num_runs=args.num_runs)
     encounter.run(to_the_death=True)

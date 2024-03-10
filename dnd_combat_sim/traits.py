@@ -153,7 +153,5 @@ def attach_traits(creature: Creature) -> None:
     for trait_name, trait in TRAITS.items():
         if trait_name in creature.traits:
             instantiated_traits.append(trait())
-        else:
-            logger.warning(f"Trait {trait_name} not found in TRAITS")
 
     creature.traits = instantiated_traits
