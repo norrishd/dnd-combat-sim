@@ -2,7 +2,9 @@ import logging
 import time
 from typing import Union
 
+from dnd_combat_sim.attack import AttackRoll
 from dnd_combat_sim.creature import Condition, Creature
+from dnd_combat_sim.traits import TRAITS, Battle, Team, Trait
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,9 @@ def log_and_pause(message: str, level: Union[int, str] = logging.INFO, sleep_tim
 class Encounter1v1:
     def __init__(self, creature1: Creature, creature2: Creature):
         self.creatures = [creature1, creature2]
+        # Dict to track all conditions on creatures, and the creature that applied them
+        self.battle = Battle([Team("team1", {creature1}), Team("team2", {creature2})])
+        self.conditions: dict[Creature, tuple[Condition, Creature]] = {}
 
     def run(self, to_the_death: bool = True) -> Creature:
         """Run an encounter between two creatures to the death, returning the winner."""
@@ -76,21 +81,34 @@ class Encounter1v1:
         # 1. Attacker chooses which attack to use
         for _ in range(attacker.num_attacks):
             attack = attacker.choose_attack([target])
-            attack_total, attack_roll, modifiers, is_crit = attacker.roll_attack(attack)
-            symbol = "+" if modifiers >= 0 else "-"
-            msg = (
-                f"{attacker.name} attacks {target.name} with {attack.name}: "
-                f"rolls {attack_total} ({attack_roll} {symbol} {abs(modifiers)}): "
-            )
+            # TODO modifiers = battle.get_modifiers(creature, target)
+            attack_roll = attacker.roll_attack(attack)
+            msg = f"{attacker.name} attacks {target.name} with {attack.name}: rolls {attack_roll}: "
 
-            if (attack_total < target.ac and not is_crit) or attack_roll == 1:
+            is_hit = self.check_if_hits(target, attack_roll)
+            if not is_hit:
                 msg += "misses"
                 log_and_pause(msg, level=logging.DEBUG)
             else:
-                damage = attacker.roll_damage(attack, crit=is_crit)
-                damage_result = target.take_damage(damage, crit=is_crit)
+                # Attack hits, calculate damage then see if target modifies it, e.g via resistance
+                attack_damage = attacker.roll_damage(attack, crit=attack_roll.is_crit)
+                modified_damage = target.modify_damage(attack_damage)
+                if modified_damage.total > 0:
+                    damage_result = target.take_damage(attack_damage, crit=attack_roll.is_crit)
+                    # Check if creature has traits like undead fortitude
+                    for trait_name in target.traits:
+                        trait: Trait = TRAITS.get(trait_name, None)
+                        if trait is None or not trait.on_take_damage:
+                            continue
+                        damage_result = trait.on_take_damage(
+                            target,
+                            attacker,
+                            attack_damage,
+                            damage_result,
+                            battle=self.battle,
+                        )
 
-                msg += f"{'CRITS' if is_crit else 'hits'} for {damage} damage."
+                msg += f"{'CRITS' if attack_roll.is_crit else 'hits'} for {attack_damage} damage."
                 if damage_result == "knocked out":
                     msg += f"\n{target.name} is down!"
                 elif damage_result == "dying":
@@ -102,6 +120,17 @@ class Encounter1v1:
 
                 if damage_result == "dead":
                     return
+
+    def check_if_hits(self, target: Creature, attack_roll: AttackRoll):
+        """Resolve an attack from attacker to a target."""
+        total = attack_roll.total
+
+        # TODO resolve reactions like shield or parry
+        # for trait in target.traits...
+        # if target.has_reaction...
+        if (total < target.ac and not attack_roll.is_crit) or attack_roll.rolled == 1:
+            return False
+        return True
 
 
 class MultiEncounter1v1:

@@ -14,6 +14,7 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
   - [x] auto-failure for damage while down
   - [x] multiple attacks per turn
   - [x] ammunition
+  - [x] damage resistances and vulnerabilities
 - agent logic
   - [x] choose best attack(s) using expected value, assuming a hit
 - simulation
@@ -25,11 +26,11 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
 
 ## TODOs
 
+- traits
 - 1D movement
 - thrown weapons
 - attacking
   - advantage, disadvantage
-  - damage resistances and vulnerabilities
   - spells
   - AOE attacks
 - agent logic
@@ -43,7 +44,6 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
   - bonus actions
   - 2D movement
   - conditions
-  - traits
   - non-attack actions
   - skill checks
   - saving throws
@@ -60,14 +60,17 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
 - bullywug vs flying sword (1/4)
   - flying sword 69%
 - goblin vs skeleton (1/4)
-  - skeleton 68% \*
+  - skeleton 68%
   - haven't implemented nimble escape, or ranged dynamics
 - gnoll vs hobgoblin (1/2)
-  - gnoll 70% \*
+  - gnoll 70%
   - Haven't implemented martial advantage or rampage (though not relevant for 1v1)
-- ## zombie vs blink dog (1/4)
+- zombie vs blink dog (1/4)
+  - TODO undead fortitude
 - orc vs lizardfolk (1/2)
+  lizardfolk 78%
 - half-ogre vs hippogriff (1)
+  - hippogriff 55%
 - mimic vs ogre (2)
 
 ## Combat flow:

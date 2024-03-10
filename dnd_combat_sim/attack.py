@@ -26,18 +26,24 @@ class DamageRoll:
         return f"{self.dice} {str(self.damage_type)}"
 
 
-@dataclass
-class DamageRolled:
-    """Class to represent an actual amount of damage rolled and its associated type.
+class AttackRoll:
+    """Class to represent the result of an attack roll, including:
 
-    E.g. 15 thunder damage.
+    - the total
+    - the rolled component.
+    - the modifier (e.g. strength or dexterity) and/or proficiency
+    - whether the roll was a critical hit.
     """
 
-    amount: Union[int, float]
-    damage_type: DamageType
+    def __init__(self, rolled: int, modifier: int, crit: bool) -> None:
+        self.rolled = rolled
+        self.modifier = modifier
+        self.total = rolled + modifier
+        self.is_crit = crit
 
-    def __post_init__(self) -> None:
-        self.amount = int(self.amount)
+    def __repr__(self) -> str:
+        symbol = "+" if self.modifier >= 0 else "-"
+        return f"{self.total} ({self.rolled} {symbol} {self.modifier})"
 
 
 class AttackDamage:
@@ -45,13 +51,20 @@ class AttackDamage:
     damage types.
     """
 
-    def __init__(self, damages_rolled: list[DamageRolled]) -> None:
-        self.damage: dict[DamageType, int] = defaultdict(int)
+    def __init__(
+        self, damages_rolled: list[tuple[int, DamageType]], from_crit: bool = False
+    ) -> None:
+        self.damages: dict[DamageType, int] = defaultdict(int)
+        self.from_crit = from_crit
         for damage_rolled in damages_rolled:
-            self.damage[damage_rolled.damage_type] += damage_rolled.amount
+            self.damages[damage_rolled[1]] += damage_rolled[0]
 
     def __repr__(self) -> str:
-        return " + ".join(f"{amount} {damage_type}" for damage_type, amount in self.damage.items())
+        return " + ".join(f"{amount} {damage_type}" for damage_type, amount in self.damages.items())
+
+    @property
+    def total(self) -> int:
+        return sum(self.damages.values())
 
 
 @dataclass(repr=False)
@@ -164,13 +177,13 @@ class Attack:
         if damage_roll is not None:
             damage_rolled = roll(damage_roll.dice, crit=crit, use_average=use_average)
             damage_rolled = max(damage_rolled + damage_modifier, 0)  # Can't be negative
-            all_damages.append(DamageRolled(damage_rolled, damage_roll.damage_type))
+            all_damages.append((damage_rolled, damage_roll.damage_type))
 
         if self.bonus_damage is not None:
             damage_rolled = roll(self.bonus_damage.dice, crit=crit, use_average=use_average)
-            all_damages.append(DamageRolled(damage_rolled, self.bonus_damage.damage_type))
+            all_damages.append((damage_rolled, self.bonus_damage.damage_type))
 
-        return AttackDamage(all_damages)
+        return AttackDamage(all_damages, from_crit=crit)
 
     def __repr__(self) -> str:
         ret = f"{self.name}:"

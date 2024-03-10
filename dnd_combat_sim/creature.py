@@ -5,9 +5,9 @@ import random
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Collection, List, Optional, Union
+from typing import Callable, Collection, List, Optional, Union
 
-from dnd_combat_sim.attack import Attack, AttackDamage, DamageType
+from dnd_combat_sim.attack import Attack, AttackDamage, AttackRoll, DamageType
 from dnd_combat_sim.conditions import Condition
 from dnd_combat_sim.dice import roll, roll_d20
 from dnd_combat_sim.rules import Ability, CreatureType, Sense, Size, Skill
@@ -154,6 +154,7 @@ class Creature:
             # skill_proficiencies=skills,
             cr=stats["cr"],
             proficiency=stats["proficiency"],
+            traits=(stats["traits"] or "").split(","),
             attacks=attacks,
             has_shield=stats["has_shield"],
             num_attacks=stats["num_attacks"],
@@ -195,7 +196,7 @@ class Creature:
 
             expected_damages = attack.roll_damage(two_handed=two_handed, use_average=True)
             # Ignore different damage types for now
-            expected_damage = sum(expected_damages.damage.values())
+            expected_damage = sum(expected_damages.damages.values())
             attack_options[expected_damage].append(attack)
 
         # Sort from highest expected damage to lowest
@@ -205,10 +206,27 @@ class Creature:
 
     def heal(self, amount: int) -> None:
         self.hp = min(self.hp + amount, self.max_hp)
+        self.conditions.discard(Condition.dead)
+        self.conditions.discard(Condition.dying)
+        self.conditions.discard(Condition.unconscious)
+
+    def modify_damage(self, attack_damage: AttackDamage) -> AttackDamage:
+        """Modify the damage dealt by an attack."""
+        for dtype in attack_damage.damages:
+            if dtype in self.immunities:
+                attack_damage.damages.pop(dtype)
+            elif dtype in self.vulnerabilities:
+                attack_damage.damages[dtype] *= 2
+            elif dtype in self.resistances:
+                attack_damage.damages[dtype] //= 2
+
+        # TODO handle conditions and traits
+
+        return attack_damage
 
     def roll_attack(
         self, attack: Attack, advantage: bool = False, disadvantage: bool = False
-    ) -> tuple[int, int, int, bool]:
+    ) -> AttackRoll:
         """Make an attack roll.
 
         Return a tuple of (attack total, d20 roll, modifiers, whether is a crit)
@@ -227,9 +245,7 @@ class Creature:
         ability_mod = self._get_attack_modifier(attack)
         proficiency_bonus = self.proficiency if attack.proficient else 0
 
-        total = attack_roll + ability_mod + proficiency_bonus
-
-        return (total, attack_roll, ability_mod + proficiency_bonus, self._is_crit(attack_roll))
+        return AttackRoll(attack_roll, ability_mod + proficiency_bonus, self._is_crit(attack_roll))
 
     def roll_damage(self, attack: Attack, crit: bool = False) -> AttackDamage:
         """Roll damage for an attack that has hit."""
@@ -303,7 +319,12 @@ class Creature:
     def start_turn(self) -> None:
         self.attacks_used_this_turn = set()
 
-    def take_damage(self, damage: AttackDamage, crit: bool = False) -> str:
+    def take_damage(
+        self,
+        damage: AttackDamage,
+        crit: bool = False,
+        # modifier: Optional[Callable[[AttackDamage], AttackDamage]] = None
+    ) -> str:
         """Take damage from a hit and return a string indicating the outcome:
 
         1. alive: take the damage and stay up.
@@ -315,41 +336,32 @@ class Creature:
             - excess damage was at least 2x max HP
             - brought creature to 3+ failed death saving throws
         """
-        total_damage = 0
-        # Apply damage vulnerabilities, resistances & immunities
-        for dtype, amount in damage.damage.items():
-            if dtype in self.immunities:
-                continue
-            elif dtype in self.vulnerabilities:
-                amount *= 2
-            elif dtype in self.resistances:
-                amount //= 2
-            total_damage += amount
+        total_damage = damage.total
 
         damage_taken = min(total_damage, self.hp)
         excess_damage = total_damage - damage_taken
+        self.hp -= damage_taken
 
         # Check for instant death
         if excess_damage > self.max_hp:
-            return self._die()
+            self._die()
+            return "instance death"
 
-        # Take some damage, possibly get knocked out or killed
         if self.hp > 0:
-            self.hp -= damage_taken
-            if self.hp == 0:
-                if self.make_death_saves:
-                    self.conditions.update([Condition.unconscious, Condition.dying])
-                    return "knocked out"
-                else:
-                    return self._die()
+            return "alive"
+
+        if Condition.dying not in self.conditions:
+            if self.make_death_saves:
+                self.conditions.update([Condition.unconscious, Condition.dying])
+                return "knocked out"
+            else:
+                return self._die()
         else:
             # Already making death saving throws, get failure(s) instead of damage
             self.death_saves["failures"] += 1 if not crit else 2
             if self.death_saves["failures"] >= 3:
                 return self._die()
             return "dying"
-
-        return "alive"
 
     # Private methods
     def _die(self) -> str:
