@@ -128,6 +128,7 @@ class Creature:
         self.make_death_saves = make_death_saves
 
         # Combat stuff
+        self.remaining_movement = speed
         self.attack_used: bool = False
         self.attacks_used_this_turn = set()
         self.bonus_action_used = False
@@ -148,7 +149,7 @@ class Creature:
         # saves = saves.split(",") if saves else []
         # skills = stats["skill_proficiencies"]
         # skills = skills.split(",") if skills else []
-        attacks = [Attack.init(attack, quantity=1) for attack in stats["attacks"].split(",")]
+        attacks = [Attack.init(attack) for attack in stats["attacks"].split(",")]
 
         return cls(
             name=monster.title() if name is None else name.title(),
@@ -325,6 +326,7 @@ class Creature:
         return new_creature
 
     def start_turn(self) -> None:
+        self.remaining_movement = self.speed
         self.attack_used = False
         self.attacks_used_this_turn = set()
         self.bonus_action_used = False

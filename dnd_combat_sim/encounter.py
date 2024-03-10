@@ -36,10 +36,10 @@ class Encounter1v1:
         )
         log_and_pause(f"Roll initiative:\n{init_str}", level=logging.DEBUG)
 
-        round = 1
+        self.battle.round = 1
         # Fight is on!
         while not any(Condition.dead in creature.conditions for creature in self.creatures):
-            log_and_pause(f"\n* Round {round} *", level=logging.DEBUG)
+            log_and_pause(f"\n* Round {self.battle.round} *", level=logging.DEBUG)
             for creature in initiative:
                 enemy = self.creatures[1] if creature == self.creatures[0] else self.creatures[0]
                 # Start of turn - reset counters, maybe roll death save or try to shake off a
@@ -77,7 +77,7 @@ class Encounter1v1:
                     log_and_pause(f"{creature.name} takes the {action} action", level=logging.DEBUG)
 
             log_and_pause(self.creatures)
-            round += 1  # Compare with target's AC
+            self.battle.round += 1  # Compare with target's AC
 
     def resolve_attack(self, attacker: Creature, target: Creature):
         """Resolve an attack from attacker to a target."""

@@ -26,7 +26,30 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
   - [x] a dozen sample monsters
 
 ## TODOs
+TempCondition
+- creature that caused it
+- optional fixed escape DC + ability to use
+- ogre gets:
+Grappled(
+    causer=mimic,
+    escape_ability=Ability.str,
+    escape_dc=13,
+    disadvantage=True,
+    escape_with_action=True  # add a linker to`self.temp_actions` which `choose_action()` checks
+)
+- mimic gets:
+Grappling(
+    target=ogre,
+    attack_modifier={"advantage": True}
+)
+- if successfully ogre uses action to escape grapple, must removed both conditions
+- also if Ogre dies (not jut KOs), remove both conditions
 
+- Weapons that deal temporary conditions (pseudopod to start with)
+- Grappler trait - advantage on target you're grappling
+- Adhesive trait - auto-grapple huge or smaller creature when hit with pseudopod
+  - escape DC 13 strength check (roll with disadvantage) 
+- Rampage: temporary new bonus action option
 - 1D movement
 - thrown weapons
 - attacking
@@ -64,12 +87,12 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
   - haven't implemented nimble escape or ranged dynamics
 - gnoll vs hobgoblin (1/2)
   - gnoll 70%
-  - Haven't implemented martial advantage or rampage (though not relevant for 1v1)
+  - Haven't implemented rampage (though not relevant for 1v1)
 - zombie vs blink dog (1/4)
   - zombie 85%
   - skeleton vulnerable to bludgeoning damage
 - orc vs lizardfolk (1/2)
-  lizardfolk 78%
+  - lizardfolk 78%
 - half-ogre vs hippogriff (1)
   - hippogriff 55%
 - mimic vs ogre (2)

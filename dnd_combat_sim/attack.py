@@ -149,13 +149,15 @@ class Attack:
 
                 attack[damage] = DamageRoll(f"{num_dice}d{die_size}", DamageType[damage_type])
 
+        range = (int(attack["range"]), int(attack["range_long"])) if attack["range"] else None
+
         return cls(
             name=attack["name"],
             melee=attack["melee"],
             damage=attack["damage"],
             two_handed_damage=attack["two_handed_damage"],
             bonus_damage=attack["bonus_damage"],
-            range=(attack["range"], attack["range_long"]) if attack["range"] else None,
+            range=range,
             is_weapon=attack["is_weapon"],
             type=attack["type"],
             ammunition=attack["ammunition"],
@@ -200,8 +202,8 @@ class Attack:
         ret = f"{self.name}:"
         if self.is_weapon:
             if self.type in ["simple", "martial"]:
-                ret += f" {self.type} "
-        ret += f" {'melee' if self.melee else ' ranged'} weapon attack."
+                ret += f" {self.type}"
+        ret += f" {'melee' if self.melee else 'ranged'} weapon attack."
 
         if self.melee:
             ret += f" Reach {10 if self.reach else 5} ft"
@@ -213,15 +215,15 @@ class Attack:
         if self.damage or self.two_handed_damage or self.bonus_damage:
             ret += " Hit: "
             if self.damage:
-                ret += self.damage
+                ret += repr(self.damage)
                 if self.two_handed_damage:
                     ret += f" ({self.two_handed_damage.dice} for two-handed)"
             elif self.two_handed_damage:
-                ret += self.two_handed_damage
+                ret += repr(self.two_handed_damage)
             if self.bonus_damage:
                 if self.damage or self.two_handed_damage:
                     ret += " + "
-                ret += self.bonus_damage
+                ret += str(self.bonus_damage)
 
         if self.ammunition or self.thrown:
             ret += f". Quantity={self.quantity}"

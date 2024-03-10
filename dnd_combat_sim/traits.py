@@ -139,6 +139,7 @@ class UndeadFortitude(OnTakeDamageTrait):
 
 
 TRAITS = {
+    "martial_advantage": MartialAdvantage,
     "pack_tactics": PackTactics,
     "undead_fortitude": UndeadFortitude,
 }
