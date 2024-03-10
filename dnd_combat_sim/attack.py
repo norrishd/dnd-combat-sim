@@ -1,12 +1,32 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from enum import StrEnum, auto
 from typing import Optional, Union
 
 from dnd_combat_sim.dice import roll
 from dnd_combat_sim.rules import DamageType, Size
 from dnd_combat_sim.utils import ATTACKS
+
+
+class AttackRoll:
+    """Class to represent the result of an attack roll to hit, including:
+
+    - rolled component
+    - modifier score (e.g. strength or dexterity modifier) and/or proficiency
+    - whether the roll was a critical hit.
+    """
+
+    def __init__(self, rolled: int, modifier: int, crit: bool) -> None:
+        self.total = rolled + modifier
+        self.rolled = rolled
+        self.modifier = modifier
+        self.is_crit = crit
+
+    def __repr__(self) -> str:
+        symbol = "+" if self.modifier >= 0 else "-"
+        return f"{self.total} ({self.rolled} {symbol} {self.modifier})"
 
 
 @dataclass
@@ -24,26 +44,6 @@ class DamageRoll:
 
     def __repr__(self) -> str:
         return f"{self.dice} {str(self.damage_type)}"
-
-
-class AttackRoll:
-    """Class to represent the result of an attack roll, including:
-
-    - the total
-    - the rolled component.
-    - the modifier (e.g. strength or dexterity) and/or proficiency
-    - whether the roll was a critical hit.
-    """
-
-    def __init__(self, rolled: int, modifier: int, crit: bool) -> None:
-        self.rolled = rolled
-        self.modifier = modifier
-        self.total = rolled + modifier
-        self.is_crit = crit
-
-    def __repr__(self) -> str:
-        symbol = "+" if self.modifier >= 0 else "-"
-        return f"{self.total} ({self.rolled} {symbol} {self.modifier})"
 
 
 class AttackDamage:
@@ -65,6 +65,17 @@ class AttackDamage:
     @property
     def total(self) -> int:
         return sum(self.damages.values())
+
+
+class DamageOutcome(StrEnum):
+    """Possible outcomes from taking damage."""
+
+    alive = auto()
+    knocked_out = auto()
+    still_dying = auto()  # If hit a creature already making death saving throws
+    dead = auto()  # For 3 failed death saving throws or basic monsters
+    instant_death = auto()  # For massive damage or certain spells
+    reanimated = auto()  # E.g. undead fortitude trait
 
 
 @dataclass(repr=False)

@@ -1,7 +1,4 @@
 """
-# SENSES
-darkvision - 60 feet
-
 # TRAITS
 Adhesive (Object Form Only). The mimic adheres to anything that touches it. A Huge or smaller creature adhered to the mimic is also grappled by it (escape DC 13). Ability checks made to escape this grapple have disadvantage.
 
@@ -39,6 +36,124 @@ Standing Leap (bullywug) - can long jump up to 20 feet and high jump up to 10 fe
 Sunlight Sensitivity (kobold). While in sunlight, the kobold has disadvantage on attack rolls, as well as on Wisdom (Perception) checks that rely on sight.
 
 Swamp Camouflage (bullywug). advantage on Dexterity (Stealth) checks made to hide in swampy terrain.
-
-Undead Fortitude. If damage reduces the zombie to 0 hit points, it must make a Constitution saving throw with a DC of 5 + the damage taken, unless the damage is radiant or from a critical hit. On a success, the zombie drops to 1 hit point instead.
 """
+
+import logging
+from typing import Any, Optional
+
+from dnd_combat_sim.attack import AttackDamage, DamageOutcome
+from dnd_combat_sim.conditions import Condition
+from dnd_combat_sim.creature import Creature
+from dnd_combat_sim.dice import roll
+from dnd_combat_sim.rules import Ability, DamageType
+from dnd_combat_sim.trait import Battle, OnRollAttackTrait, OnRollDamageTrait, OnTakeDamageTrait
+
+logger = logging.getLogger(__name__)
+
+
+def get_distance(creature1: Creature, creature2: Creature) -> float:
+    """Calculate the distance between two creatures."""
+    return ((creature1.x - creature2.x) ** 2 + (creature1.y - creature2.y) ** 2) ** 0.5
+
+
+### Traits ###
+class MartialAdvantage(OnRollDamageTrait):
+    """Once per turn, can deal an extra 7 (2d6) damage to a creature hit with a weapon attack if
+    that creature is within 5 feet of a non-incapacitated ally."""
+
+    def __init__(self) -> None:
+        self.last_used: Optional[int] = None
+
+    def on_roll_damage(
+        self, creature: Creature, damage_roll: AttackDamage, battle: Battle
+    ) -> dict[str, Any]:
+        if self.last_used == battle.round:
+            return damage_roll
+
+        allies = battle.get_allies(creature)
+        for ally in allies:
+            if Condition.incapacitated not in ally.conditions:
+                damage_type = list(damage_roll.damages.keys())[0]
+                extra_damage = roll("2d6")
+                logger.debug(
+                    f"{creature.name} used martial advantage to roll an extra {extra_damage} "
+                    f"{damage_type} damage."
+                )
+                damage_roll.damages[damage_type] += extra_damage
+                self.last_used = battle.round
+                break
+
+        return damage_roll
+
+
+class PackTactics(OnRollAttackTrait):
+    """Gets advantage on attack roll if a non-incapacitated ally is within 5 ft of target."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def on_roll_attack(
+        self, creature: Creature, target: Creature, battle: Battle
+    ) -> dict[str, Any]:
+        for ally in battle.get_allies(creature):
+            if Condition.incapacitated not in ally.conditions and get_distance(ally, target) <= 5:
+                logger.debug(f"{creature.name} attacks with advantage thanks to pack tactics!")
+                return {"advantage": True}
+
+
+class UndeadFortitude(OnTakeDamageTrait):
+    """Trait for zombies."""
+
+    def on_take_damage(
+        self,
+        creature: Creature,
+        damage: AttackDamage,
+        damage_result: DamageOutcome,
+    ) -> None:
+        """If damage reduces the zombie to 0 hit points, it must make a Constitution saving throw
+        with a DC of 5 + the damage taken, unless the damage is radiant or from a critical hit. On a
+        success, the zombie drops to 1 hit point instead.
+        """
+        if damage_result not in {DamageOutcome.knocked_out, DamageOutcome.dead}:
+            return damage_result
+
+        if damage.from_crit:
+            logger.debug("Undead fortitude overcome by crit")
+            return damage_result
+        if DamageType.radiant in damage.damages:
+            logger.debug("Undead fortitude overcome by radiant damage")
+            return damage_result
+
+        save = creature.roll_saving_throw(Ability.con)
+        dc = 5 + damage.total
+        if save >= dc:
+            creature.heal(1)
+            logger.debug(
+                f"{creature.name} passed DC {dc} undead fortitude const save with a {save} and "
+                "reanimated! "
+            )
+            return DamageOutcome.reanimated
+
+        logger.debug(f"{creature.name} failed DC {dc} undead fortitude const save with a {save}.")
+        return damage_result
+
+
+TRAITS = {
+    "pack_tactics": PackTactics,
+    "undead_fortitude": UndeadFortitude,
+}
+
+
+def attach_traits(creature: Creature) -> None:
+    """Helper function to instantiated and attach traits to creatures.
+
+    To avoid circular import of traits.py <-> creature.py, must attach outside of creature.py.
+    """
+    instantiated_traits = []
+    for trait_name, trait in TRAITS.items():
+        if trait_name in creature.traits:
+            instantiated_traits.append(trait())
+        else:
+            logger.warning(f"Trait {trait_name} not found in TRAITS")
+
+    creature.traits = instantiated_traits

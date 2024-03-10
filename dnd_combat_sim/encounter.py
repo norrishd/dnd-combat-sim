@@ -2,9 +2,10 @@ import logging
 import time
 from typing import Union
 
-from dnd_combat_sim.attack import AttackRoll
+from dnd_combat_sim.attack import AttackRoll, DamageOutcome
 from dnd_combat_sim.creature import Condition, Creature
-from dnd_combat_sim.traits import TRAITS, Battle, Team, Trait
+from dnd_combat_sim.trait import Battle, Team, Trait
+from dnd_combat_sim.traits import TRAITS, attach_traits
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +21,14 @@ class Encounter1v1:
         self.creatures = [creature1, creature2]
         # Dict to track all conditions on creatures, and the creature that applied them
         self.battle = Battle([Team("team1", {creature1}), Team("team2", {creature2})])
-        self.conditions: dict[Creature, tuple[Condition, Creature]] = {}
 
     def run(self, to_the_death: bool = True) -> Creature:
         """Run an encounter between two creatures to the death, returning the winner."""
         # Reset creatures
         for i, creature in enumerate(self.creatures):
-            self.creatures[i] = self.creatures[i].spawn()
+            new_creature = creature.spawn()
+            attach_traits(new_creature)
+            self.creatures[i] = new_creature
 
         # Roll initiative and determine order
         initiative = {creature: creature.roll_initiative() for creature in self.creatures}
@@ -41,7 +43,25 @@ class Encounter1v1:
         while not any(Condition.dead in creature.conditions for creature in self.creatures):
             log_and_pause(f"\n* Round {round} *", level=logging.DEBUG)
             for creature in initiative:
+                # Start of turn - reset counters, maybe roll death save or try to shake off a
+                # temporary condition
                 creature.start_turn()
+                if Condition.dead in creature.conditions:
+                    break
+
+                # Don't get a turn if have any of these conditions
+                if any(
+                    condition in creature.conditions
+                    for condition in [
+                        Condition.dead,
+                        Condition.paralyzed,
+                        Condition.petrified,
+                        Condition.stunned,
+                        Condition.unconscious,
+                    ]
+                ):
+                    continue
+
                 # Choose what to do
                 action, bonus_action = creature.choose_action()
 
@@ -57,19 +77,6 @@ class Encounter1v1:
                         and not to_the_death
                     ):
                         return creature
-
-                elif action == "death_saving_throw":
-                    value, result, total_successes_and_failures = creature.roll_death_save()
-                    log_and_pause(
-                        f"{creature.name} rolled a {value} on their death saving throw: {result}\n"
-                        f"{total_successes_and_failures}.",
-                        level=logging.DEBUG,
-                    )
-                    if result == "death":
-                        if Condition.dead in target.conditions:
-                            log_and_pause(f"{target.name} is DEAD!", level=logging.DEBUG)
-                            return creature
-
                 else:
                     log_and_pause(f"{creature.name} takes the {action} action", level=logging.DEBUG)
 
@@ -81,45 +88,40 @@ class Encounter1v1:
         # 1. Attacker chooses which attack to use
         for _ in range(attacker.num_attacks):
             attack = attacker.choose_attack([target])
-            # TODO modifiers = battle.get_modifiers(creature, target)
+
             attack_roll = attacker.roll_attack(attack)
             msg = f"{attacker.name} attacks {target.name} with {attack.name}: rolls {attack_roll}: "
 
             is_hit = self.check_if_hits(target, attack_roll)
             if not is_hit:
-                msg += "misses"
-                log_and_pause(msg, level=logging.DEBUG)
-            else:
-                # Attack hits, calculate damage then see if target modifies it, e.g via resistance
-                attack_damage = attacker.roll_damage(attack, crit=attack_roll.is_crit)
-                modified_damage = target.modify_damage(attack_damage)
-                if modified_damage.total > 0:
-                    damage_result = target.take_damage(attack_damage, crit=attack_roll.is_crit)
-                    # Check if creature has traits like undead fortitude
-                    for trait_name in target.traits:
-                        trait: Trait = TRAITS.get(trait_name, None)
-                        if trait is None or not trait.on_take_damage:
-                            continue
-                        damage_result = trait.on_take_damage(
-                            target,
-                            attacker,
-                            attack_damage,
-                            damage_result,
-                            battle=self.battle,
-                        )
+                log_and_pause(f"{msg}misses", level=logging.DEBUG)
+                return
 
-                msg += f"{'CRITS' if attack_roll.is_crit else 'hits'} for {attack_damage} damage."
-                if damage_result == "knocked out":
-                    msg += f"\n{target.name} is down!"
-                elif damage_result == "dying":
-                    msg += f"\n{target.name} is on death's door"
-                elif damage_result == "dead":
-                    msg += f"\n{target.name} is DEAD!"
+            # Attack hits, calculate damage then see if target modifies it, e.g via resistance
+            attack_damage = attacker.roll_damage(attack, crit=attack_roll.is_crit)
+            modified_damage = target.modify_damage(attack_damage)
+            msg += f"{'CRITS' if attack_roll.is_crit else 'hits'} for {modified_damage} damage."
+            log_and_pause(msg, level=logging.DEBUG)
 
-                log_and_pause(msg, level=logging.DEBUG)
+            if modified_damage.total > 0:
+                damage_result = target.take_damage(attack_damage, crit=attack_roll.is_crit)
+                # Check if creature has traits like undead fortitude
+                for trait in self._get_traits(target, "on_take_damage"):
+                    damage_result = trait.on_take_damage(
+                        target,
+                        attack_damage,
+                        damage_result,
+                    )
 
-                if damage_result == "dead":
-                    return
+            if damage_result == DamageOutcome.knocked_out:
+                log_and_pause(f"{target.name} is down!", level=logging.DEBUG)
+            elif damage_result == DamageOutcome.still_dying:
+                log_and_pause(f"{target.name} is on death's door", level=logging.DEBUG)
+            elif damage_result in {DamageOutcome.dead, DamageOutcome.instant_death}:
+                log_and_pause(f"{target.name} is DEAD!", level=logging.DEBUG)
+
+            if damage_result == "dead":
+                return
 
     def check_if_hits(self, target: Creature, attack_roll: AttackRoll):
         """Resolve an attack from attacker to a target."""
@@ -131,6 +133,15 @@ class Encounter1v1:
         if (total < target.ac and not attack_roll.is_crit) or attack_roll.rolled == 1:
             return False
         return True
+
+    def _get_traits(self, creature: Creature, method: str) -> list[Trait]:
+        """Get all traits that apply to a method."""
+        traits = []
+        for trait_name in creature.traits:
+            if trait_name in TRAITS and getattr(TRAITS[trait_name], method) is not None:
+                traits.append(TRAITS[trait_name])
+
+        return traits
 
 
 class MultiEncounter1v1:

@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Callable, Collection, List, Optional, Union
 
-from dnd_combat_sim.attack import Attack, AttackDamage, AttackRoll, DamageType
+from dnd_combat_sim.attack import Attack, AttackDamage, AttackRoll, DamageOutcome, DamageType
 from dnd_combat_sim.conditions import Condition
 from dnd_combat_sim.dice import roll, roll_d20
 from dnd_combat_sim.rules import Ability, CreatureType, Sense, Size, Skill
@@ -128,7 +128,10 @@ class Creature:
         self.make_death_saves = make_death_saves
 
         # Combat stuff
+        self.attack_used: bool = False
         self.attacks_used_this_turn = set()
+        self.bonus_action_used = False
+        self.reaction_used = False
         self.conditions = set()
         self.temp_hp: int = 0
         self.death_saves = {"successes": 0, "failures": 0}
@@ -168,12 +171,8 @@ class Creature:
 
     def choose_action(self) -> tuple[str, Optional[str]]:
         """Choose an action and bonus action for the turn."""
-        if self.hp == 0:
-            action = "death_saving_throw"
-            bonus_action = None
-        else:
-            action = random.choice(["attack"])
-            bonus_action = random.choice([None])  # TODO implement
+        action = random.choice(["attack"])
+        bonus_action = random.choice([None])  # TODO implement
 
         return action, bonus_action
 
@@ -187,10 +186,8 @@ class Creature:
         available_hands = self.num_hands - 1 if self.has_shield else self.num_hands
         two_handed = available_hands >= 2
         for attack in self.attacks:
-            if (
-                attack.quantity < 1
-                or self.different_attacks
-                and attack.name in self.attacks_used_this_turn
+            if attack.quantity < 1 or (
+                self.different_attacks and attack.name in self.attacks_used_this_turn
             ):
                 continue
 
@@ -204,20 +201,24 @@ class Creature:
         best_options = attack_options[list(attack_options.keys())[0]]
         return random.choice(best_options)
 
-    def heal(self, amount: int) -> None:
+    def heal(self, amount: int, wake_up: bool = True) -> None:
         self.hp = min(self.hp + amount, self.max_hp)
         self.conditions.discard(Condition.dead)
         self.conditions.discard(Condition.dying)
-        self.conditions.discard(Condition.unconscious)
+        if wake_up:
+            self.conditions.discard(Condition.unconscious)
 
     def modify_damage(self, attack_damage: AttackDamage) -> AttackDamage:
         """Modify the damage dealt by an attack."""
         for dtype in attack_damage.damages:
             if dtype in self.immunities:
+                logger.debug(f"{self.name} is immune to {str(dtype)} damage.")
                 attack_damage.damages.pop(dtype)
             elif dtype in self.vulnerabilities:
+                logger.debug(f"{self.name} is vulnerable to {str(dtype)} damage.")
                 attack_damage.damages[dtype] *= 2
             elif dtype in self.resistances:
+                logger.debug(f"{self.name} is resistant to {str(dtype)} damage.")
                 attack_damage.damages[dtype] //= 2
 
         # TODO handle conditions and traits
@@ -231,6 +232,7 @@ class Creature:
 
         Return a tuple of (attack total, d20 roll, modifiers, whether is a crit)
         """
+        self.attack_used = True
         self.attacks_used_this_turn.add(attack.name)
         # If firing a projectile or throwing the weapon, decrease the count
         if not attack.melee:  # TODO or attack.melee and throwing
@@ -262,15 +264,15 @@ class Creature:
         )
         return damage
 
-    def roll_death_save(self) -> tuple[int, str, dict[str, int]]:
+    def roll_death_save(self) -> tuple[int, str]:
         """Roll a death saving throw.
 
-        Return the roll, result, and tally of death saves/failures."""
+        Return the roll and result."""
         roll = roll_d20()
 
         if roll == 20:
             result = "critical success"
-            self.hp = 1
+            self.heal(1)
             self._reset_death_saves(wake_up=True)
         else:
             if 10 <= roll <= 19:
@@ -287,14 +289,17 @@ class Creature:
                 self.death_saves["failures"] += 2
 
             if self.death_saves["failures"] >= 3:
-                result = self._die()
+                self._die()
+                result = "death"
 
-        return roll, result, self.death_saves
+        return roll, result
 
     def roll_initiative(self):
         return roll_d20() + self.abilities.get_modifier(Ability.dex)
 
-    def roll_saving_throw(self, ability: Ability, advantage: bool, disadvantage: bool) -> int:
+    def roll_saving_throw(
+        self, ability: Ability, advantage: bool = False, disadvantage: bool = False
+    ) -> int:
         """Roll a saving throw for a given ability."""
         save = roll_d20(advantage=advantage, disadvantage=disadvantage)
         modifier = self.abilities.get_modifier(ability)
@@ -317,7 +322,19 @@ class Creature:
         return new_creature
 
     def start_turn(self) -> None:
+        self.attack_used = False
         self.attacks_used_this_turn = set()
+        self.bonus_action_used = False
+        self.reaction_used = False
+
+        if Condition.dying in self.conditions:
+            value, result = self.roll_death_save()
+            logger.debug(
+                f"{self.name} rolled a {value} on their death saving throw: {result}\n"
+                f"{self.death_saves}."
+            )
+            if result == "death":
+                logger.debug(f"{self.name} is DEAD!")
 
     def take_damage(
         self,
@@ -345,15 +362,15 @@ class Creature:
         # Check for instant death
         if excess_damage > self.max_hp:
             self._die()
-            return "instance death"
+            return DamageOutcome.instant_death
 
         if self.hp > 0:
-            return "alive"
+            return DamageOutcome.alive
 
         if Condition.dying not in self.conditions:
             if self.make_death_saves:
                 self.conditions.update([Condition.unconscious, Condition.dying])
-                return "knocked out"
+                return DamageOutcome.knocked_out
             else:
                 return self._die()
         else:
@@ -361,7 +378,7 @@ class Creature:
             self.death_saves["failures"] += 1 if not crit else 2
             if self.death_saves["failures"] >= 3:
                 return self._die()
-            return "dying"
+            return DamageOutcome.still_dying
 
     # Private methods
     def _die(self) -> str:
@@ -369,7 +386,7 @@ class Creature:
         self.conditions.discard(Condition.dying)
         self.conditions.discard(Condition.unconscious)
 
-        return "dead"
+        return DamageOutcome.dead
 
     def _get_attack_modifier(self, attack: Attack) -> int:
         """Get an attack modifier:
