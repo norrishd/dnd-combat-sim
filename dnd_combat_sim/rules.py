@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from enum import StrEnum, auto
+from enum import IntEnum, StrEnum, auto
 
 
 class Ability(StrEnum):
@@ -13,21 +13,38 @@ class Ability(StrEnum):
     cha = auto()
 
 
-@dataclass
-class Abilities:
-    """Class to store ability scores and modifiers."""
+class DamageType(StrEnum):
+    acid = auto()
+    bludgeoning = auto()
+    cold = auto()
+    fire = auto()
+    force = auto()
+    lightning = auto()
+    necrotic = auto()
+    piercing = auto()
+    poison = auto()
+    psychic = auto()
+    radiant = auto()
+    slashing = auto()
+    thunder = auto()
 
-    str: int
-    dex: int
-    con: int
-    int: int
-    wis: int
-    cha: int
 
-    def get_modifier(self, ability: Ability) -> int:
-        """Get the modifier for an ability score."""
-        score = getattr(self, ability.name)
-        return (score - 10) // 2
+class DamageExchange:
+    """Class to represent a damage roll with an associated type, e.g. 3d6 thunder damage."""
+
+    def __init__(self) -> None:
+        """Things to track:
+
+        - creature
+        - target
+        - attack used
+        - damage dealt
+        - whether was crit
+        - damage taken
+
+        How this can be used: responses to damage, e.g. undead fortitude, etc.
+        """
+        pass
 
 
 class Sense(StrEnum):
@@ -39,26 +56,7 @@ class Sense(StrEnum):
     truesight = auto()
 
 
-class Type(StrEnum):
-    """Creature types."""
-
-    aberration = auto()
-    beast = auto()
-    celestial = auto()
-    construct = auto()
-    dragon = auto()
-    elemental = auto()
-    fey = auto()
-    fiend = auto()
-    giant = auto()
-    humanoid = auto()
-    monstrosity = auto()
-    ooze = auto()
-    plant = auto()
-    undead = auto()
-
-
-class Size(StrEnum):
+class Size(IntEnum):
     """Creature sizes."""
 
     tiny = auto()
@@ -90,3 +88,22 @@ class Skill(StrEnum):
     sleight_of_hand = auto()
     stealth = auto()
     survival = auto()
+
+
+class CreatureType(StrEnum):
+    """Creature types."""
+
+    aberration = auto()
+    beast = auto()
+    celestial = auto()
+    construct = auto()
+    dragon = auto()
+    elemental = auto()
+    fey = auto()
+    fiend = auto()
+    giant = auto()
+    humanoid = auto()
+    monstrosity = auto()
+    ooze = auto()
+    plant = auto()
+    undead = auto()

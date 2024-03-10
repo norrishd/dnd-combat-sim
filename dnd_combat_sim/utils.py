@@ -43,8 +43,8 @@ def load_attacks(*args, **kwargs):
 def load_monsters(*args, **kwargs) -> pd.DataFrame:
     """Load all monsters from the monsters.csv file."""
 
-    df: pd.DataFrame = pd.read_csv(MONSTERS_PATH, *args, **kwargs).set_index("name")
-    df = df.fillna(
+    monsters: pd.DataFrame = pd.read_csv(MONSTERS_PATH, *args, **kwargs).set_index("name")
+    monsters = monsters.fillna(
         {
             "has_shield": False,
             "num_hands": 2,
@@ -57,9 +57,10 @@ def load_monsters(*args, **kwargs) -> pd.DataFrame:
             "versatile": True,
         },
     )
-    df[["num_hands", "num_attacks"]] = df[["num_hands", "num_attacks"]].astype(int)
+    monsters[["num_hands", "num_attacks"]] = monsters[["num_hands", "num_attacks"]].astype(int)
+    monsters = monsters.fillna(np.nan).replace([np.nan], [None])
 
-    return df
+    return monsters
 
 
 ATTACKS = load_attacks()

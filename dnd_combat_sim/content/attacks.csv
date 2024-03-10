@@ -1,9 +1,9 @@
 ﻿key,name,melee,damage,two_handed_damage,bonus_damage,range,range_long,ammunition,finesse,heavy,light,loading,reach,thrown,trait,recharge
 beak_d10,beak,TRUE,1d10 piercing,,,,,,,,,,,,,
 bite_d4,bite,TRUE,1d4 piercing,,,,,,TRUE,,,,,,,
-bite_d4_b,bite,TRUE,1d4 bludgeoning,,,,,,TRUE,,,,,,,
-bite_d6,bite,TRUE,1d6 piercing,,,,,,TRUE,,,,,,,
-bite_d8,bite,TRUE,1d8 piercing,,,,,,TRUE,,,,,,,
+bite_d4_b,bite,TRUE,1d4 bludgeoning,,,,,,,,,,,,,
+bite_d6,bite,TRUE,1d6 piercing,,,,,,,,,,,,,
+bite_d8,bite,TRUE,1d8 piercing,,,,,,,,,,,,,
 bite_d8_acid,bite,TRUE,1d8 piercing,,1d8 acid,,,,,,,,,,,
 claws_d6,claws,TRUE,1d6 piercing,,,,,,,,,,,,,
 pseudopod,pseudopod,TRUE,1d8 bludgeoning,,,,,,,,,,,,adhesive,

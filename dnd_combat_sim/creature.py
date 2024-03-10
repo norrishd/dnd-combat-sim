@@ -4,15 +4,33 @@ import logging
 import random
 from collections import defaultdict
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Collection, List, Optional, Union
 
-from dnd_combat_sim.attack import Attack, DamageType
+from dnd_combat_sim.attack import Attack, AttackDamage, DamageType
 from dnd_combat_sim.conditions import Condition
 from dnd_combat_sim.dice import roll, roll_d20
-from dnd_combat_sim.rules import Abilities, Ability, Sense, Size, Skill, Type
+from dnd_combat_sim.rules import Ability, CreatureType, Sense, Size, Skill
 from dnd_combat_sim.utils import MONSTERS
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Abilities:
+    """Class to store ability scores and modifiers."""
+
+    str: int
+    dex: int
+    con: int
+    int: int
+    wis: int
+    cha: int
+
+    def get_modifier(self, ability: Ability) -> int:
+        """Get the modifier for an ability score."""
+        score = getattr(self, ability.name)
+        return (score - 10) // 2
 
 
 class Creature:
@@ -22,12 +40,13 @@ class Creature:
         self,
         name: str,
         ac: int,
-        hp: str,  # e.g. 5d6
+        hp: Union[str, int],  # e.g. '5d6' or 16
         abilities: Union[Abilities, list[int]],
-        save_proficiencies: Optional[Collection[Ability]] = None,
+        save_proficiencies: Optional[Collection[Union[Ability, str]]] = None,
         skill_proficiencies: Optional[Collection[Skill]] = None,
         skill_expertises: Optional[Collection[Skill]] = None,
         vulnerabilities: Optional[Collection[DamageType]] = None,
+        resistances: Optional[Collection[DamageType]] = None,
         immunities: Optional[Collection[DamageType]] = None,
         cond_immunities: Optional[Collection[Condition]] = None,
         senses: Optional[Union[Collection[Sense], dict[Sense, int]]] = None,
@@ -48,7 +67,7 @@ class Creature:
         # spell_slots: dict[str, int] = None,
         # spells: list[Spell] = None,
         size: Optional[Size] = None,  # Can infer from hit die type
-        type: Optional[Type] = None,
+        type: Optional[CreatureType] = None,
         subtype: Optional[str] = None,  # No mechanical meaning?
         make_death_saves: bool = False,
         use_average_hp: bool = False,
@@ -56,15 +75,29 @@ class Creature:
         """Create a creature.
 
         Args:
+            name: What to call the creature.
+            ac: Armour class.
+            hp: Max hit points, either absolute or die to roll, e.g. "5d6", for 5x 6-sided die.
         """
         self.name = name
         self.ac = ac
-        self.num_hit_die, self.hit_die = map(int, hp.split("d"))
         self.abilities = Abilities(*abilities) if isinstance(abilities, list) else abilities
-        self.saving_throw_proficiencies = save_proficiencies or set()
+
+        self.use_average_hp = use_average_hp
+        if isinstance(hp, str):
+            self.hit_dice = hp
+            self.hp = self.max_hp = self._roll_hit_points()
+        else:
+            self.hit_dice = None
+            self.hp = self.max_hp = hp
+
+        saves = save_proficiencies or []
+        saves = {Ability[save] if isinstance(save, str) else save for save in saves}
+        self.save_proficiencies = saves
         self.skill_proficiencies = skill_proficiencies or set()
         self.skill_expertises = skill_expertises or set()
         self.vulnerabilities = vulnerabilities or set()
+        self.resistances = resistances or set()
         self.immunities = immunities or set()
         self.cond_immunities = cond_immunities or set()
         self.senses = senses or set()
@@ -77,7 +110,7 @@ class Creature:
         self.attacks = [
             Attack.init(attack) if isinstance(attack, str) else attack for attack in attacks
         ]
-        if type == Type.humanoid:
+        if type == CreatureType.humanoid:
             self.attacks.append(Attack.init("unarmed strike"))
         self.has_shield = has_shield
         self.num_hands = num_hands
@@ -93,10 +126,6 @@ class Creature:
         self.type_ = type
         self.subtype = subtype
         self.make_death_saves = make_death_saves
-        self.use_average_hp = use_average_hp
-
-        # Hit points and temporary hit points
-        self.hp = self.max_hp = self._roll_hit_points()
 
         # Combat stuff
         self.attacks_used_this_turn = set()
@@ -114,20 +143,23 @@ class Creature:
         # saves = saves.split(",") if saves else []
         # skills = stats["skill_proficiencies"]
         # skills = skills.split(",") if skills else []
-        attacks = [Attack.init(attack) for attack in stats["attacks"].split(",")]
+        attacks = [Attack.init(attack, quantity=1) for attack in stats["attacks"].split(",")]
 
         return cls(
             name=monster.title() if name is None else name.title(),
             ac=stats["ac"],
             hp=stats["hp"],
             abilities=[stats[ability] for ability in Ability.__members__],
-            # saving_throw_proficiencies=saves,
+            # save_proficiencies=[] stats["save_proficiencies"],
             # skill_proficiencies=skills,
             cr=stats["cr"],
             proficiency=stats["proficiency"],
             attacks=attacks,
             has_shield=stats["has_shield"],
             num_attacks=stats["num_attacks"],
+            resistances=stats["resistances"],
+            vulnerabilities=stats["vulnerabilities"],
+            immunities=stats["immunities"],
         )
 
     def __repr__(self) -> str:
@@ -160,7 +192,10 @@ class Creature:
                 and attack.name in self.attacks_used_this_turn
             ):
                 continue
-            expected_damage = attack.roll_damage(two_handed=two_handed, use_average=True)
+
+            expected_damages = attack.roll_damage(two_handed=two_handed, use_average=True)
+            # Ignore different damage types for now
+            expected_damage = sum(expected_damages.damage.values())
             attack_options[expected_damage].append(attack)
 
         # Sort from highest expected damage to lowest
@@ -196,17 +231,20 @@ class Creature:
 
         return (total, attack_roll, ability_mod + proficiency_bonus, self._is_crit(attack_roll))
 
-    def roll_damage(self, attack: Attack, crit: bool = False) -> int:
+    def roll_damage(self, attack: Attack, crit: bool = False) -> AttackDamage:
         """Roll damage for an attack that has hit."""
         # Use two-handed damage if have a spare hand
+        damage_modifier = self._get_attack_modifier(attack)
+
         available_hands = self.num_hands - 1 if self.has_shield else self.num_hands
         can_use_two_handed = available_hands >= 2
-        dice_damage = attack.roll_damage(
-            two_handed=can_use_two_handed, crit=crit, use_average=False
+        damage = attack.roll_damage(
+            two_handed=can_use_two_handed,
+            crit=crit,
+            damage_modifier=damage_modifier,
+            use_average=False,
         )
-        modifier_damage = self._get_attack_modifier(attack)
-
-        return max(dice_damage + modifier_damage, 0)
+        return damage
 
     def roll_death_save(self) -> tuple[int, str, dict[str, int]]:
         """Roll a death saving throw.
@@ -240,6 +278,15 @@ class Creature:
     def roll_initiative(self):
         return roll_d20() + self.abilities.get_modifier(Ability.dex)
 
+    def roll_saving_throw(self, ability: Ability, advantage: bool, disadvantage: bool) -> int:
+        """Roll a saving throw for a given ability."""
+        save = roll_d20(advantage=advantage, disadvantage=disadvantage)
+        modifier = self.abilities.get_modifier(ability)
+        if ability in self.save_proficiencies:
+            modifier += self.proficiency
+
+        return save + modifier
+
     def spawn(self, name: Optional[str] = None) -> Creature:
         new_creature = deepcopy(self)
         if name is not None:
@@ -256,7 +303,7 @@ class Creature:
     def start_turn(self) -> None:
         self.attacks_used_this_turn = set()
 
-    def take_damage(self, damage: int, crit: bool = False) -> str:
+    def take_damage(self, damage: AttackDamage, crit: bool = False) -> str:
         """Take damage from a hit and return a string indicating the outcome:
 
         1. alive: take the damage and stay up.
@@ -268,8 +315,19 @@ class Creature:
             - excess damage was at least 2x max HP
             - brought creature to 3+ failed death saving throws
         """
-        damage_taken = min(damage, self.hp)
-        excess_damage = damage - damage_taken
+        total_damage = 0
+        # Apply damage vulnerabilities, resistances & immunities
+        for dtype, amount in damage.damage.items():
+            if dtype in self.immunities:
+                continue
+            elif dtype in self.vulnerabilities:
+                amount *= 2
+            elif dtype in self.resistances:
+                amount //= 2
+            total_damage += amount
+
+        damage_taken = min(total_damage, self.hp)
+        excess_damage = total_damage - damage_taken
 
         # Check for instant death
         if excess_damage > self.max_hp:
@@ -334,6 +392,8 @@ class Creature:
             self.conditions.discard(Condition.unconscious)
 
     def _roll_hit_points(self) -> int:
+        self.num_hit_die, self.hit_die = map(int, self.hit_dice.split("d"))
+
         const_mod = self.abilities.get_modifier(Ability.con)
         if self.use_average_hp:
             return int((roll(self.hit_die, use_average=True) + const_mod) * self.num_hit_die)

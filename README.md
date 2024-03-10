@@ -60,10 +60,39 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
 - bullywug vs flying sword (1/4)
   - flying sword 69%
 - goblin vs skeleton (1/4)
-  - skeleton 68%\*
-  - haven't implemented nimble escape
+  - skeleton 68% \*
+  - haven't implemented nimble escape, or ranged dynamics
 - gnoll vs hobgoblin (1/2)
-- zombie (1/4)
+  - gnoll 70% \*
+  - Haven't implemented martial advantage or rampage (though not relevant for 1v1)
+- ## zombie vs blink dog (1/4)
 - orc vs lizardfolk (1/2)
 - half-ogre vs hippogriff (1)
 - mimic vs ogre (2)
+
+## Combat flow:
+
+- roll initiative
+- start round. Per creature, in initiative order
+  - start turn: check if dying, incapacitated, etc
+  - resolve effecs, e.g. death saving throw, end special conditions, take poison damage
+  - choose action or bonus action, factoring in remaining movement
+  - potentially move to achieve action/bonus action
+  - potentially trigger one or more opportunity attack(s)
+  - check if incapacitated, unconscious etc
+  - start action on target
+  - potentially handle a reaction, e.g. counter-spell, shield or undead fortitude
+  - re-assess action on target (e.g. maybe attack now misses)
+  - resolve action, e.g. do damage
+  - potentially handle reaction, e.g. hellish rebuke, undead fortitude or mud mephit exploding
+  - check if incapacitated, unconscious etc
+  - choose remaining action or bonus action, factoring in remaining movement
+  - potentially move to achieve action/bonus action
+  - potentially trigger one or more opportunity attack(s)
+  - check if incapacitated, unconscious etc
+  - start action on target
+  - potentially handle a reaction, e.g. counter-spell, shield or undead fortitude
+  - re-assess action on target (e.g. maybe attack now misses)
+  - resolve action, e.g. do damage
+  - potentially handle reaction, e.g. hellish rebuke, undead fortitude or mud mephit exploding
+  - check if incapacitated, unconscious etc

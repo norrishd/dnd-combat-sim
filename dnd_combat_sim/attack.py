@@ -1,49 +1,68 @@
 from __future__ import annotations
 
-import re
+from collections import defaultdict
 from dataclasses import dataclass, field
-from enum import StrEnum, auto
-from typing import Optional
+from typing import Optional, Union
 
 from dnd_combat_sim.dice import roll
-from dnd_combat_sim.rules import Size
+from dnd_combat_sim.rules import DamageType, Size
 from dnd_combat_sim.utils import ATTACKS
-
-# Match e.g. "3d6 bludgeoning" -> ("3", "6", "bludgeoning)
-DAMAGE_PATTERN = re.compile(r"([0-9]+)d([0-9]+) (.*)")
-
-
-class DamageType(StrEnum):
-    acid = auto()
-    bludgeoning = auto()
-    cold = auto()
-    fire = auto()
-    force = auto()
-    lightning = auto()
-    necrotic = auto()
-    piercing = auto()
-    poison = auto()
-    psychic = auto()
-    radiant = auto()
-    slashing = auto()
-    thunder = auto()
 
 
 @dataclass
-class Damage:
+class DamageRoll:
+    """Class to represent a damage roll with an associated type, e.g. 3d6 thunder damage."""
+
     dice: str
     damage_type: DamageType
 
+    @classmethod
+    def from_str(cls, damage_str: str) -> DamageRoll:
+        """Parse a string like '3d6 thunder' into a `DamageRoll` object."""
+        dice, damage_type = damage_str.split(" ")
+        return cls(dice, DamageType[damage_type])
+
+    def __repr__(self) -> str:
+        return f"{self.dice} {str(self.damage_type)}"
+
 
 @dataclass
+class DamageRolled:
+    """Class to represent an actual amount of damage rolled and its associated type.
+
+    E.g. 15 thunder damage.
+    """
+
+    amount: Union[int, float]
+    damage_type: DamageType
+
+    def __post_init__(self) -> None:
+        self.amount = int(self.amount)
+
+
+class AttackDamage:
+    """Class to represent the total damage deal from an attack that hits, including one or more
+    damage types.
+    """
+
+    def __init__(self, damages_rolled: list[DamageRolled]) -> None:
+        self.damage: dict[DamageType, int] = defaultdict(int)
+        for damage_rolled in damages_rolled:
+            self.damage[damage_rolled.damage_type] += damage_rolled.amount
+
+    def __repr__(self) -> str:
+        return " + ".join(f"{amount} {damage_type}" for damage_type, amount in self.damage.items())
+
+
+@dataclass(repr=False)
 class Attack:
     """Base class for an attack that a creature can make."""
 
     name: str
     melee: bool = True
-    damage: Optional[str] = None  # E.g. "1d8 bludgeoning", "3d6"
-    two_handed_damage: Optional[Damage] = None
-    bonus_damage: Optional[str] = None
+    damage: Optional[Union[str, DamageRoll]] = None  # E.g. "1d8 bludgeoning"
+    two_handed_damage: Optional[Union[str, DamageRoll]] = None
+    bonus_damage: Optional[Union[str, DamageRoll]] = None
     range: Optional[tuple[int, int]] = None  # Normal range / long range, in feet
     is_weapon: bool = True  # If False assume a 'natural' weapon like claws, bite etc
     type: Optional[str] = None  # E.g. 'simple', 'martial', 'monster'
@@ -57,27 +76,24 @@ class Attack:
     trait: Optional[list[str]] = None  # E.g. for net or lance TODO
     quantity: Optional[int] = None
     recharge: Optional[str] = None  # E.g. "5-6" or "6"
-    size: Size = Size.medium  # Incraese the num die rolled for larger weapons
+    size: Size = Size.medium  # Creatures attack with disadvantage using a larger weapon
     proficient: bool = True  # Specific to the wielder
-    _damage: Optional[Damage] = field(default=None, init=False)
-    _two_handed_damage: Optional[Damage] = field(default=None, init=False)
-    _bonus_damage: Optional[Damage] = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        # Assume 1 melee
+        if isinstance(self.damage, str):
+            self.damage = DamageRoll.from_str(self.damage)
+        if isinstance(self.two_handed_damage, str):
+            self.two_handed_damage = DamageRoll.from_str(self.two_handed_damage)
+        if isinstance(self.bonus_damage, str):
+            self.bonus_damage = DamageRoll.from_str(self.bonus_damage)
+
+        # Assume 1 melee weapon, or roll default amount of ammo for ranged weapons
         if self.quantity is None:
             if self.melee or not self.is_weapon:
                 self.quantity = 1
             else:
-                # Ranged weapon ammo: refer to introduction of the Monster Manual
+                # See intro section of the Monster Manual
                 self.quantity = roll("2d10") if self.ammunition else roll("2d4")
-
-        if self.damage:
-            self._damage = self._parse_damage(self.damage)
-        if self.two_handed_damage:
-            self._two_handed_damage = self._parse_damage(self.two_handed_damage)
-        if self.bonus_damage:
-            self._bonus_damage = self._parse_damage(self.bonus_damage)
 
     @classmethod
     def init(
@@ -87,8 +103,27 @@ class Attack:
         quantity: Optional[int] = None,
         size: Size = Size.medium,
     ) -> Attack:
-        """Initialise an attack from _attacks.csv_."""
-        attack = ATTACKS.loc[key]
+        """Initialise an attack from _attacks.csv_.
+
+        If size is larger than medium, increase the number of dice rolled for the damage.
+        """
+        attack = ATTACKS.loc[key].copy()
+
+        # Larger creatures use larger weapons which multiply the number of dice rolled.
+        # See DMG 'Creating a Monster Stat Block' p278
+        if attack["is_weapon"] and size > Size.medium:
+            for damage in ["damage", "two_handed_damage"]:
+                dice, damage_type = damage.split(" ")
+                num_dice, die_size = map(int, dice.split("d"))
+
+                if size == Size.large:
+                    num_dice = num_dice * 2
+                elif size == Size.huge:
+                    num_dice = num_dice * 3
+                elif size == Size.gargantuan:
+                    num_dice = num_dice * 4
+
+                attack[damage] = DamageRoll(f"{num_dice}d{die_size}", DamageType[damage_type])
 
         return cls(
             name=attack["name"],
@@ -114,48 +149,57 @@ class Attack:
         )
 
     def roll_damage(
-        self, two_handed: bool = False, crit: bool = False, use_average: bool = False
-    ) -> float:
+        self,
+        two_handed: bool = False,
+        crit: bool = False,
+        damage_modifier: int = 0,
+        use_average: bool = False,
+    ) -> AttackDamage:
         """Roll the (average) damage for this attack."""
-        damage = 0
-        if two_handed and self._two_handed_damage is not None:
-            damage = roll(self._two_handed_damage.dice, crit=crit, use_average=use_average)
-        elif self._damage is not None:
-            damage = roll(self._damage.dice, crit=crit, use_average=use_average)
+        all_damages = []
 
-        if self._bonus_damage is not None:
-            damage += roll(self._bonus_damage.dice, crit=crit, use_average=use_average)
+        damage_roll = self.damage
+        if two_handed and self.two_handed_damage is not None:
+            damage_roll = self.two_handed_damage
+        if damage_roll is not None:
+            damage_rolled = roll(damage_roll.dice, crit=crit, use_average=use_average)
+            damage_rolled = max(damage_rolled + damage_modifier, 0)  # Can't be negative
+            all_damages.append(DamageRolled(damage_rolled, damage_roll.damage_type))
 
-        return damage
+        if self.bonus_damage is not None:
+            damage_rolled = roll(self.bonus_damage.dice, crit=crit, use_average=use_average)
+            all_damages.append(DamageRolled(damage_rolled, self.bonus_damage.damage_type))
 
-    def _parse_damage(self, damage: str) -> Damage:
-        """Parse the damage string into a Damage object."""
-        match = re.match(DAMAGE_PATTERN, damage)
+        return AttackDamage(all_damages)
 
-        err_msg = f"Invalid damage string: {damage}. Expected e.g. '2d6 force'."
-        if not match or len(match.groups()) < 2:
-            raise ValueError(err_msg)
+    def __repr__(self) -> str:
+        ret = f"{self.name}:"
+        if self.is_weapon:
+            if self.type in ["simple", "martial"]:
+                ret += f" {self.type} "
+        ret += f" {'melee' if self.melee else ' ranged'} weapon attack."
 
-        num_dice = int(match.groups()[0])
-        die_size = int(match.groups()[1])
+        if self.melee:
+            ret += f" Reach {10 if self.reach else 5} ft"
+            if self.thrown:
+                ret += f", range {self.range[0]}/{self.range[1]} ft thrown."
+        else:
+            ret += f" Range {self.range[0]}/{self.range[1]} ft."
 
-        # Larger weapons for larger creatures roll more dice.
-        # See DMG 'Creating a Monster Stat Block' p278
-        if self.size == Size.large:
-            num_dice = num_dice * 2
-        elif self.size == Size.huge:
-            num_dice = num_dice * 3
-        elif self.size == Size.gargantuan:
-            num_dice = num_dice * 4
+        if self.damage or self.two_handed_damage or self.bonus_damage:
+            ret += " Hit: "
+            if self.damage:
+                ret += self.damage
+                if self.two_handed_damage:
+                    ret += f" ({self.two_handed_damage.dice} for two-handed)"
+            elif self.two_handed_damage:
+                ret += self.two_handed_damage
+            if self.bonus_damage:
+                if self.damage or self.two_handed_damage:
+                    ret += " + "
+                ret += self.bonus_damage
 
-        damage_string = f"{num_dice}d{die_size}"
+        if self.ammunition or self.thrown:
+            ret += f". Quantity={self.quantity}"
 
-        if len(match.groups()) == 2:
-            return Damage(damage_string)
-
-        # Damage type is included
-        damage_type = match.groups()[2]
-        if damage_type not in DamageType:
-            raise ValueError(f"Invalid damage type: {damage_type}.")
-
-        return Damage(damage_string, DamageType[damage_type])
+        return ret
