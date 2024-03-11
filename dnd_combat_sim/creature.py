@@ -9,12 +9,13 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Collection, List, Optional, Sequence, Union
 
-from dnd_combat_sim.attack import Attack, AttackDamage, AttackRoll, DamageOutcome, DamageType
+from dnd_combat_sim.attack import Attack, AttackDamage, AttackRoll, DamageType
 from dnd_combat_sim.dice import roll, roll_d20
 from dnd_combat_sim.rules import (
     Ability,
     Condition,
     CreatureType,
+    DamageOutcome,
     Point,
     Sense,
     Size,
@@ -209,7 +210,7 @@ class Creature:
         # skills = skills.split(",") if skills else []
         size = Size[stats["size"]]
         attacks = [Attack.init(attack, size=size) for attack in stats["attacks"].split(",")]
-
+        breakpoint()
         return cls(
             name=monster.title() if name is None else name.title(),
             ac=stats["ac"],
@@ -217,17 +218,18 @@ class Creature:
             abilities=[stats[ability] for ability in Ability.__members__],
             # save_proficiencies=[] stats["save_proficiencies"],
             # skill_proficiencies=skills,
-            cr=stats["cr"],
-            proficiency=stats["proficiency"],
-            traits=(stats["traits"] or "").split(","),
             attacks=attacks,
-            has_shield=stats["has_shield"],
-            num_attacks=stats["num_attacks"],
-            resistances=stats["resistances"],
-            vulnerabilities=stats["vulnerabilities"],
+            cr=stats["cr"],
+            creature_type=CreatureType[stats["type"]],
             immunities=stats["immunities"],
-            size=size,
+            has_shield=stats["has_shield"],
             make_death_saves=make_death_saves,
+            num_attacks=stats["num_attacks"],
+            proficiency=stats["proficiency"],
+            resistances=stats["resistances"],
+            size=size,
+            traits=(stats["traits"] or "").split(","),
+            vulnerabilities=stats["vulnerabilities"],
         )
 
     def __repr__(self) -> str:
@@ -436,19 +438,8 @@ class Creature:
         self,
         damage: AttackDamage,
         crit: bool = False,
-        # modifier: Optional[Callable[[AttackDamage], AttackDamage]] = None
-    ) -> str:
-        """Take damage from a hit and return a string indicating the outcome:
-
-        1. alive: take the damage and stay up.
-        2. knocked out: take enough damage to get knocked out, when `self.make_death_saves == True`.
-        3. dying: take 1 or 2 automatic failed death saving throws (if already unconsious), but
-            still not yet dead.
-        3. dead: take enough damage to die, either because:
-            - `self.make_death_saves == False`
-            - excess damage was at least 2x max HP
-            - brought creature to 3+ failed death saving throws
-        """
+    ) -> DamageOutcome:
+        """Take damage from a hit and return the outcome of the damage."""
         total_damage = damage.total
 
         damage_taken = min(total_damage, self.hp)

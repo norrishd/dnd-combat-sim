@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import StrEnum, auto
-from typing import Optional, Union
+from typing import Collection, Optional, Union
 
 from dnd_combat_sim.dice import roll
 from dnd_combat_sim.rules import DamageType, Size
@@ -80,18 +80,6 @@ class AttackDamage:
         return sum(self.damages.values())
 
 
-class DamageOutcome(StrEnum):
-    """Possible outcomes from taking damage."""
-
-    # pylint: disable=invalid-name
-    alive = auto()
-    knocked_out = auto()
-    still_dying = auto()  # If hit a creature already making death saving throws
-    dead = auto()  # For 3 failed death saving throws or basic monsters
-    instant_death = auto()  # For massive damage or certain spells
-    reanimated = auto()  # E.g. undead fortitude trait
-
-
 @dataclass(repr=False, eq=False)
 class Attack:
     """Base class for an attack that a creature can make.
@@ -107,7 +95,7 @@ class Attack:
         range: The normal and long range of a ranged weapon, in feet, whether fired or thrown.
         is_weapon: Whether the attack is a weapon attack, as opposed to a natural attack like a
             bite or claw.
-
+        traits: Special effects applied on a hit, e.g. for Net or monster attacks.
     """
 
     name: str
@@ -130,7 +118,7 @@ class Attack:
     recharge: Optional[str] = None  # E.g. "5-6" or "6"
     size: Size = Size.medium  # Creatures attack with disadvantage using a larger weapon
     proficient: bool = True  # Specific to the wielder - TODO move to Creature
-    conditions: Optional[list[str]] = None  # E.g. for net, lance, monster attacks
+    traits: Optional[Collection[str]] = None
 
     def __post_init__(self) -> None:
         if isinstance(self.damage, str):
@@ -160,7 +148,7 @@ class Attack:
 
         If size is larger than medium, increase the number of dice rolled for the damage.
         """
-        attack = ATTACKS.loc[key].copy()
+        attack = ATTACKS.loc[key].to_dict()
 
         # Larger creatures use larger weapons which multiply the number of dice rolled.
         # See DMG 'Creating a Monster Stat Block' p278
@@ -181,33 +169,12 @@ class Attack:
 
                 attack[damage] = DamageRoll(f"{num_dice}d{die_size}", DamageType[damage_type])
 
-        range_ = (int(attack["range"]), int(attack["range_long"])) if attack["range"] else None
+        attack["conditions"] = attack["conditions"].split(",") if attack["conditions"] else None
+        range_long = attack.pop("range_long")
+        attack["range"] = (int(attack["range"]), int(range_long)) if attack["range"] else None
+        attack.update(dict(proficient=proficient, quantity=quantity, size=size))
 
-        breakpoint()
-
-        return cls(
-            name=attack["name"],
-            melee=attack["melee"],
-            damage=attack["damage"],
-            two_handed_damage=attack["two_handed_damage"],
-            bonus_damage=attack["bonus_damage"],
-            range=range_,
-            is_weapon=attack["is_weapon"],
-            type=attack["type"],
-            ammunition=attack["ammunition"],
-            finesse=attack["finesse"],
-            heavy=attack["heavy"],
-            light=attack["light"],
-            loading=attack["loading"],
-            reach=attack["reach"],
-            thrown=attack["thrown"],
-            trait=attack["trait"],
-            quantity=quantity,
-            recharge=attack["recharge"],
-            size=size,
-            proficient=proficient,
-            conditions=attack["conditions"],
-        )
+        return cls(**attack)
 
     def roll_damage(
         self,

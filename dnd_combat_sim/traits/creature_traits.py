@@ -1,9 +1,6 @@
-"""
-# To implement:
+"""Special traits that apply to creatures, e.g. grappler, pack tactics, undead fortitude.
 
-Adhesive (Object Form Only). The mimic adheres to anything that touches it. A Huge or smaller
-creature adhered to the mimic is also grappled by it (escape DC 13). Ability checks made to escape
-this grapple have disadvantage.
+# To implement:
 
 aggressive. As a bonus action, the orc can move up to its speed toward a hostile creature that it
 can see.
@@ -20,8 +17,6 @@ False Appearance. While the sword remains motionless and isn't flying, it is ind
 a normal sword.
 False Appearance (Object Form Only). While the mimic remains motionless, it is indistinguishable
 from an ordinary object.
-
-Grappler. The mimic has advantage on attack rolls against any creature grappled by it.
 
 hold_breath (lizardfolk) - can hold its breath for 15 minutes.
 
@@ -55,24 +50,66 @@ well as on Wisdom (Perception) checks that rely on sight.
 Swamp Camouflage (bullywug). advantage on Dexterity (Stealth) checks made to hide in swampy terrain.
 """
 
+import abc
 import logging
 from typing import Any, Optional
 
-from dnd_combat_sim.attack import AttackDamage, DamageOutcome
-from dnd_combat_sim.conditions import Condition
+from dnd_combat_sim.attack import AttackDamage
+from dnd_combat_sim.battle import Battle
 from dnd_combat_sim.creature import Creature
 from dnd_combat_sim.dice import roll
-from dnd_combat_sim.rules import Ability, DamageType
-from dnd_combat_sim.trait import (
-    Battle,
-    OnDealDamageTrait,
-    OnRollAttackTrait,
-    OnRollDamageTrait,
-    OnTakeDamageTrait,
-)
+from dnd_combat_sim.rules import Ability, Condition, DamageOutcome, DamageType
+from dnd_combat_sim.traits.trait import Trait
 from dnd_combat_sim.utils import get_distance
 
 logger = logging.getLogger(__name__)
+
+### Abstract Creature traits ###
+
+
+class OnAttackHit(Trait):
+    """ABC for traits that do something when an attack hits."""
+
+    @abc.abstractmethod
+    def on_attack_hit(self, creature: Creature, target: Creature, battle: Battle):
+        pass
+
+
+class OnDealDamageTrait(Trait):
+    """ABC for traits that do something after dealing damage."""
+
+    @abc.abstractmethod
+    def on_deal_damage(self, creature: Creature, target: Creature):
+        pass
+
+
+class OnRollAttackTrait(Trait):
+    """ABC for traits that modify an attack roll."""
+
+    @abc.abstractmethod
+    def on_roll_attack(self, creature: Creature, target: Creature, battle: Battle):
+        pass
+
+
+class OnRollDamageTrait(Trait):
+    """ABC for traits that modify a damage roll."""
+
+    @abc.abstractmethod
+    def on_roll_damage(self, creature: Creature, damage_roll: AttackDamage, battle: Battle):
+        pass
+
+
+class OnTakeDamageTrait(Trait):
+    """ABC for traits that trigger after taking damage."""
+
+    @abc.abstractmethod
+    def on_take_damage(
+        self, creature: Creature, damage: AttackDamage, damage_result: DamageOutcome
+    ):
+        pass
+
+
+### Concrete creature traits ###
 
 
 class Grappler(OnRollAttackTrait):
@@ -81,7 +118,7 @@ class Grappler(OnRollAttackTrait):
     def on_roll_attack(
         self, creature: Creature, target: Creature, battle: Battle
     ) -> dict[str, Any]:
-        if Condition.grappled in target.conditions:
+        if Condition.grappled in battle.temp_conditions[creature]:
             logger.debug(
                 f"{creature.name} has advantage on attack roll against grappled {target.name}."
             )
@@ -140,13 +177,17 @@ class Rampage(OnDealDamageTrait):
     can take a bonus action to move up to half its speed and make a bite attack.
     """
 
-    def on_deal_damage(self, creature: Creature, target: Creature):
+    def on_deal_damage(self, creature: Creature, target: Creature, damage_outcome: DamageOutcome):
         """
         TODO:
-        - check if creature was reduced to 0 HP
         - ugh add an allowed bonus action that lasts for one turn
-        - boost remaining movement by half usual max
         """
+        if damage_outcome in {
+            DamageOutcome.dead,
+            DamageOutcome.knocked_out,
+            DamageOutcome.instant_death,
+        }:
+            creature.remaining_movement += creature.speed // 2
 
 
 class UndeadFortitude(OnTakeDamageTrait):

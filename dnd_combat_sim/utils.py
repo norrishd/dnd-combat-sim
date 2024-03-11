@@ -1,4 +1,7 @@
+import logging
 from pathlib import Path
+import time
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -8,6 +11,8 @@ from dnd_combat_sim.rules import Point
 # Suppress: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated
 # and will change in a future version. Call result.infer_objects(copy=False) instead.
 pd.set_option("future.no_silent_downcasting", True)
+
+logger = logging.getLogger(__name__)
 
 ATTACKS_PATH = Path(__file__).parent / "content/attacks.csv"
 MONSTERS_PATH = Path(__file__).parent / "content/monsters.csv"
@@ -68,6 +73,12 @@ def load_monsters(*args, **kwargs) -> pd.DataFrame:
     monsters = monsters.fillna(np.nan).replace([np.nan], [None])
 
     return monsters
+
+
+def log_and_pause(message: str, level: Union[int, str] = logging.INFO, sleep_time: float = 0.0):
+    # print(message)
+    logger.log(level, message)
+    time.sleep(sleep_time)
 
 
 ATTACKS = load_attacks()

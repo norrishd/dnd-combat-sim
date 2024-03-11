@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum, auto
 
+# pylint: disable=invalid-name
+
 
 class Condition(StrEnum):
     """Possible conditions, roughly sorted into themes.
@@ -48,7 +50,6 @@ class Condition(StrEnum):
         - Unaware of its surroundings
         - The creature has resistance to all damage
         - The creature is immune to poison and disease
-
     """
 
     blinded = auto()
@@ -68,6 +69,17 @@ class Condition(StrEnum):
     # Not official conditions but useful to track
     dying = auto()
     dead = auto()
+
+
+class DamageOutcome(StrEnum):
+    """Possible outcomes from taking damage."""
+
+    alive = auto()
+    knocked_out = auto()
+    still_dying = auto()  # If hit a creature already making death saving throws
+    dead = auto()  # For 3 failed death saving throws or basic monsters
+    instant_death = auto()  # For massive damage or certain spells
+    reanimated = auto()  # E.g. undead fortitude trait
 
 
 class DamageType(StrEnum):

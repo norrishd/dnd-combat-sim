@@ -1,25 +1,21 @@
 import logging
-import time
-from typing import Optional, Union
+from typing import Optional
 
-from dnd_combat_sim.attack import AttackDamage, AttackRoll, DamageOutcome
+from dnd_combat_sim.attack import AttackDamage, AttackRoll
+from dnd_combat_sim.battle import Battle, Team
+from dnd_combat_sim.conditions import TempCondition
+
 from dnd_combat_sim.creature import Condition, Creature
-from dnd_combat_sim.trait import (
-    Battle,
+from dnd_combat_sim.rules import DamageOutcome
+from dnd_combat_sim.traits.trait import (
     OnRollAttackTrait,
     OnRollDamageTrait,
     OnTakeDamageTrait,
-    Team,
 )
-from dnd_combat_sim.traits import TRAITS, attach_traits
+from dnd_combat_sim.traits.creature_traits import attach_traits
+from dnd_combat_sim.utils import log_and_pause
 
 logger = logging.getLogger(__name__)
-
-
-def log_and_pause(message: str, level: Union[int, str] = logging.INFO, sleep_time: float = 0.0):
-    # print(message)
-    logger.log(level, message)
-    time.sleep(sleep_time)
 
 
 class Encounter1v1:
@@ -96,7 +92,8 @@ class Encounter1v1:
             attack = attacker.choose_attack([target])
 
             # 2. Make attack roll
-            modifiers = self._get_attack_modifiers(attacker, target)
+            modifiers = self._get_creature_attack_modifiers(attacker, target)
+            modifiers.update(self._get_weapon_attack_modifiers(attack, target))
             attack_roll = attacker.roll_attack(attack, **modifiers)
 
             msg = f"{attacker.name} attacks {target.name} with {attack.name}: rolls {attack_roll}: "
@@ -121,12 +118,7 @@ class Encounter1v1:
                 # 6. Actually do the damage, then handle traits like undead fortitude
                 damage_result = target.take_damage(attack_damage, crit=attack_roll.is_crit)
                 damage_result = self._modify_damage_result(target, attack_damage, damage_result)
-            if attack.traits is not None:
-                for trait in attack.traits:
-                    if trait in TRAITS:
-                        damage_result = TRAITS[trait].on_hit(
-                            attacker, target, attack_damage, damage_result
-                        )
+            conditions = self._on_weapon_hit(attack)
 
             if damage_result == DamageOutcome.knocked_out:
                 log_and_pause(f"{target.name} is down!", level=logging.DEBUG)
@@ -148,7 +140,9 @@ class Encounter1v1:
             return False
         return True
 
-    def _get_attack_modifiers(self, attacker: Creature, target: Creature) -> dict[str, bool]:
+    def _get_creature_attack_modifiers(
+        self, attacker: Creature, target: Creature
+    ) -> dict[str, bool]:
         modifiers = {}
         for trait in attacker.traits:
             if isinstance(trait, OnRollAttackTrait):
@@ -160,6 +154,27 @@ class Encounter1v1:
                     )
                 )
         return modifiers
+
+    def _get_weapon_attack_modifiers(self, attacker: Creature, target: Creature) -> dict[str, bool]:
+        modifiers = {}
+        for trait in attacker.traits:
+            if isinstance(trait, OnRollAttackTrait):
+                modifiers.update(
+                    trait.on_roll_attack(
+                        attacker,
+                        target=target,
+                        battle=self.battle,
+                    )
+                )
+        return modifiers
+
+    def _on_weapon_hit(self, attack: AttackRoll) -> Optional[TempCondition]:
+        if attack.traits is not None:
+            for trait in attack.traits:
+                if condition.condition not in target.condition_immunities:
+                    target.conditions[condition.condition] = condition
+                    target.conditions[condition.condition].apply()
+                self.conditions[target].add()
 
     def _modify_attack_damage(
         self, attacker: Creature, attack_damage: AttackDamage
