@@ -258,7 +258,8 @@ class Creature:
         For now, simpply choose the attack with the highest expected damage, not factoring in
         likelihood to hit, advantage/disadvantage, resistances or anything else.
         """
-        attack_options = defaultdict(list)
+        attack_options = []
+        expected_damages = []
         available_hands = self.num_hands - 1 if self.has_shield else self.num_hands
         two_handed = available_hands >= 2
         for attack in self.attacks:
@@ -267,17 +268,14 @@ class Creature:
             ):
                 continue
 
-            expected_damages = attack.roll_damage(two_handed=two_handed, use_average=True)
             # Ignore different damage types for now
-            expected_damage = sum(expected_damages.damages.values())
-            attack_options[expected_damage].append(attack)
+            expected_damage = attack.roll_damage(two_handed=two_handed, use_average=True).total
+            attack_options.append(attack)
+            expected_damages.append(expected_damage)
 
-        # Sort from highest expected damage to lowest
-        attack_options = dict(sorted(attack_options.items(), reverse=True))
-        best_options = attack_options[list(attack_options.keys())[0]]
-        return random.choice(best_options)
+        return random.choices(attack_options, weights=expected_damages)[0]
 
-    def grapple(
+    def roll_grapple(
         self, target: Creature, advantage: bool = False, disadvantage: bool = False
     ) -> bool:
         """Attempt to grapple a target."""

@@ -31,7 +31,8 @@ E.g. to see a skeleton go at it with a zombie:
   - [x] multiple attacks per turn
   - [x] ammunition
   - [x] damage resistances and vulnerabilities
-  - [x] traits (undead fortitude)
+  - [x] traits (e.g. undead fortitude)
+  - [x] weapon/attack traits (e.g. mimic pseudopod)
 - agent logic
   - [x] choose best attack(s) using expected value, assuming a hit
 - simulation
@@ -41,44 +42,18 @@ E.g. to see a skeleton go at it with a zombie:
   - [x] all simple & martial weapons
   - [x] a dozen sample monsters
 - traits
-  - Grappler
-  - Martial advantage
-  - Pack tactics
-  - Undead fortitude
+  - creature traits
+    - Grappler
+    - Martial advantage
+    - Pack tactics
+    - Undead fortitude
+  - attack traits
+    - Adhesive
 
 ## TODOs
 
-TempCondition(
-condition: Condition,
-escape_dc: Optional[int],
-instigator: Optional[Creature],
-contested
-)
-
-E.g. for an ogre hit by a mimic's pseudopod.
-
-- ogre gets:
-  Grappled(
-  causer=mimic,
-  escape_ability=Ability.str,
-  escape_dc=13,
-  disadvantage=True,
-  escape_with_action=True # add a linker to`self.temp_actions` which `choose_action()` checks
-  )
-- mimic gets:
-  Grappling(
-  target=ogre,
-  attack_modifier={"advantage": True}
-  )
-- if successfully ogre uses action to escape grapple, must removed both conditions
-- also if Ogre dies (not jut KOs), remove both conditions
-
-- Weapons that deal temporary conditions (pseudopod to start with)
-- Grappler trait - advantage on target you're grappling
-- Adhesive trait - auto-grapple huge or smaller creature when hit with pseudopod
-  - escape DC 13 strength check (roll with disadvantage)
-- Rampage: temporary new bonus action option
 - 1D movement
+- Rampage: temporary new bonus action option
 - thrown weapons
 - attacking
   - advantage, disadvantage

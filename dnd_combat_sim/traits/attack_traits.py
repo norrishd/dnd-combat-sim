@@ -33,6 +33,10 @@ class OnHitAttackTrait(AttackTrait):
     condition.
     """
 
+    @abc.abstractmethod
+    def on_attack_hit(self, attacker: Creature, target: Creature) -> Optional[TempCondition]:
+        """Do something when an attack hits, e.g. cause a temporary condition."""
+
 
 ##############################
 ### Concrete attack traits ###
