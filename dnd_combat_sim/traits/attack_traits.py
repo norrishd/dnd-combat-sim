@@ -1,5 +1,6 @@
 """Special traits that apply to attacks/weapons, e.g. adhesive, lance, net."""
 
+import abc
 import logging
 from typing import Optional
 from dnd_combat_sim.attack import Attack
@@ -21,6 +22,10 @@ class AttackTrait(Trait):
 
 class OnRollAttackAttackTrait(AttackTrait):
     """Base class for traits that modify an attack roll."""
+
+    @abc.abstractmethod
+    def on_roll_attack(self, attacker: Creature, target: Creature) -> dict[str, bool]:
+        """Modify the attack roll, e.g. impose disadvantage on the attack roll."""
 
 
 class OnHitAttackTrait(AttackTrait):
@@ -88,11 +93,12 @@ def attach_attack_traits(attack: Attack) -> None:
     """
     instantiated_traits = []
     for trait_name, trait in ATTACK_TRAITS.items():
-        if trait_name in attack.traits:
+        if attack.traits is not None and trait_name in attack.traits:
             instantiated_traits.append(trait())
 
-    missing_traits = set(attack.traits) - ATTACK_TRAITS.keys()
-    if missing_traits:
-        logger.warning("Skipping unimplemented traits")
+    if attack.traits is not None:
+        missing_traits = set(attack.traits) - ATTACK_TRAITS.keys()
+        if missing_traits:
+            logger.warning("Skipping unimplemented traits")
 
     attack.traits = instantiated_traits

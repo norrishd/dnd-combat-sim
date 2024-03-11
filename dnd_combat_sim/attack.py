@@ -128,13 +128,15 @@ class Attack:
         if isinstance(self.bonus_damage, str):
             self.bonus_damage = DamageRoll.from_str(self.bonus_damage)
 
-        # Assume 1 melee weapon, or roll default amount of ammo for ranged weapons
+        # Assume 1 melee weapon, or roll default amount of ammo for ranged/thrown weapons
         if self.quantity is None:
-            if self.melee or not self.is_weapon:
-                self.quantity = 1
-            else:
+            if self.thrown:
                 # See intro section of the Monster Manual
-                self.quantity = roll("2d10") if self.ammunition else roll("2d4")
+                self.quantity = roll("2d4")
+            elif not self.melee:  # Ranged
+                self.quantity = roll("2d10")
+            else:
+                self.quantity = 1
 
     @classmethod
     def init(
@@ -169,7 +171,7 @@ class Attack:
 
                 attack[damage] = DamageRoll(f"{num_dice}d{die_size}", DamageType[damage_type])
 
-        attack["conditions"] = attack["conditions"].split(",") if attack["conditions"] else None
+        attack["traits"] = attack["traits"].split(",") if attack["traits"] else None
         range_long = attack.pop("range_long")
         attack["range"] = (int(attack["range"]), int(range_long)) if attack["range"] else None
         attack.update(dict(proficient=proficient, quantity=quantity, size=size))

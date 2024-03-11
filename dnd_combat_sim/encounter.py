@@ -1,18 +1,23 @@
 import logging
 from typing import Optional
 
-from dnd_combat_sim.attack import AttackDamage, AttackRoll
+from dnd_combat_sim.attack import Attack, AttackDamage, AttackRoll
 from dnd_combat_sim.battle import Battle, Team
 from dnd_combat_sim.conditions import TempCondition
 
 from dnd_combat_sim.creature import Condition, Creature
 from dnd_combat_sim.rules import DamageOutcome
-from dnd_combat_sim.traits.trait import (
+from dnd_combat_sim.traits.attack_traits import (
+    OnHitAttackTrait,
+    OnRollAttackAttackTrait,
+    attach_attack_traits,
+)
+from dnd_combat_sim.traits.creature_traits import (
     OnRollAttackTrait,
     OnRollDamageTrait,
     OnTakeDamageTrait,
+    attach_traits,
 )
-from dnd_combat_sim.traits.creature_traits import attach_traits
 from dnd_combat_sim.utils import log_and_pause
 
 logger = logging.getLogger(__name__)
@@ -29,6 +34,8 @@ class Encounter1v1:
         # Reset creatures
         for creature in self.creatures:
             attach_traits(creature)
+            for attack in creature.attacks:
+                attach_attack_traits(attack)
 
         # Roll initiative and determine order
         initiative = {creature: creature.roll_initiative() for creature in self.creatures}
@@ -92,9 +99,17 @@ class Encounter1v1:
             attack = attacker.choose_attack([target])
 
             # 2. Make attack roll
-            modifiers = self._get_creature_attack_modifiers(attacker, target)
-            modifiers.update(self._get_weapon_attack_modifiers(attack, target))
+            # Attack modifiers from a) creature traits, b) attack (e.g. weapon) traits
+            modifiers, creature_traits_used = self._get_creature_attack_modifiers(attacker, target)
+            attack_modifiers, attack_traits_used = self._get_attack_trait_modifiers(
+                attack, attacker, target
+            )
+            modifiers.update(attack_modifiers)
             attack_roll = attacker.roll_attack(attack, **modifiers)
+            if creature_traits_used:
+                logger.debug(f"Triggered creature traits: {creature_traits_used}")
+            if attack_traits_used:
+                logger.debug(f"Triggered attack traits: {attack_traits_used}")
 
             msg = f"{attacker.name} attacks {target.name} with {attack.name}: rolls {attack_roll}: "
 
@@ -104,21 +119,27 @@ class Encounter1v1:
                 log_and_pause(f"{msg}misses", level=logging.DEBUG)
                 continue
 
-            # 4. If hits calculate damage, and check for trait modifiers, e.g. Martial advantage
+            # 4. If hit, calculate damage, and check for trait modifiers, e.g. Martial advantage
             attack_damage = attacker.roll_damage(attack, crit=attack_roll.is_crit)
-            # TODO consider whether `roll_damage` should apply this via a `modifer`
-            attack_damage = self._modify_attack_damage(attacker, attack_damage)
+            attack_damage = self._apply_attacker_trait_damage_modifiers(attacker, attack_damage)
 
             # 5. See if target modifies damage, e.g. from resistance or vulnerability
             modified_damage = target.modify_damage(attack_damage)
-            msg += f"{'CRITS' if attack_roll.is_crit else 'hits'} for {modified_damage} damage."
+            msg += f"{'CRITS' if attack_roll.is_crit else 'hits'} for {modified_damage} damage"
+            if attack_damage.total != attack_damage.total:
+                msg += f" (modified from {attack_damage})"
             log_and_pause(msg, level=logging.DEBUG)
 
             if modified_damage.total > 0:
-                # 6. Actually do the damage, then handle traits like undead fortitude
-                damage_result = target.take_damage(attack_damage, crit=attack_roll.is_crit)
-                damage_result = self._modify_damage_result(target, attack_damage, damage_result)
-            conditions = self._on_weapon_hit(attack)
+                # 6. Actually do the damage, then resolve traits like undead fortitude
+                damage_result = target.take_damage(modified_damage, crit=attack_roll.is_crit)
+                damage_result = self._apply_target_damage_modifiers(
+                    target, attack_damage, damage_result
+                )
+            # Apply weapon traits which may deal more damage
+            conditions = self._apply_weapon_on_hit_traits(attack, attacker, target)
+            if conditions is not None:
+                breakpoint()
 
             if damage_result == DamageOutcome.knocked_out:
                 log_and_pause(f"{target.name} is down!", level=logging.DEBUG)
@@ -142,43 +163,51 @@ class Encounter1v1:
 
     def _get_creature_attack_modifiers(
         self, attacker: Creature, target: Creature
+    ) -> tuple[dict[str, bool], set[OnRollAttackTrait]]:
+        """Get modifiers from creature traits that modify attack rolls."""
+        modifiers = dict()
+        traits_applied = set()
+        for trait in attacker.traits:
+            if isinstance(trait, OnRollAttackTrait):
+                modifiers.update(
+                    trait.on_roll_attack(
+                        attacker,
+                        target=target,
+                        battle=self.battle,
+                    )
+                )
+                traits_applied.add(trait)
+        return modifiers, traits_applied
+
+    def _get_attack_trait_modifiers(
+        self, attack: Attack, attacker: Creature, target: Creature
     ) -> dict[str, bool]:
         modifiers = {}
-        for trait in attacker.traits:
-            if isinstance(trait, OnRollAttackTrait):
+        traits_applied = set()
+        for trait in attack.traits:
+            if isinstance(trait, OnRollAttackAttackTrait):
                 modifiers.update(
                     trait.on_roll_attack(
-                        attacker,
+                        attacker=attacker,
                         target=target,
-                        battle=self.battle,
                     )
                 )
-        return modifiers
+                traits_applied.add(trait)
+        return modifiers, traits_applied
 
-    def _get_weapon_attack_modifiers(self, attacker: Creature, target: Creature) -> dict[str, bool]:
-        modifiers = {}
-        for trait in attacker.traits:
-            if isinstance(trait, OnRollAttackTrait):
-                modifiers.update(
-                    trait.on_roll_attack(
-                        attacker,
-                        target=target,
-                        battle=self.battle,
-                    )
-                )
-        return modifiers
-
-    def _on_weapon_hit(self, attack: AttackRoll) -> Optional[TempCondition]:
+    def _apply_weapon_on_hit_traits(
+        self, attack: Attack, attacker: Creature, target: Creature
+    ) -> Optional[TempCondition]:
+        """Apply any attack (weapon) traits that modify damage dealt."""
         if attack.traits is not None:
             for trait in attack.traits:
-                if condition.condition not in target.condition_immunities:
-                    target.conditions[condition.condition] = condition
-                    target.conditions[condition.condition].apply()
-                self.conditions[target].add()
+                if isinstance(trait, OnHitAttackTrait):
+                    return trait.on_attack_hit(attacker, target)
 
-    def _modify_attack_damage(
+    def _apply_attacker_trait_damage_modifiers(
         self, attacker: Creature, attack_damage: AttackDamage
     ) -> AttackDamage:
+        """Apply any attacker creature traits that modify damage dealt."""
         for trait in attacker.traits:
             if isinstance(trait, OnRollDamageTrait):
                 attack_damage = trait.on_roll_damage(
@@ -188,9 +217,10 @@ class Encounter1v1:
                 )
         return attack_damage
 
-    def _modify_damage_result(
+    def _apply_target_damage_modifiers(
         self, target: Creature, attack_damage: AttackDamage, damage_result: DamageOutcome
     ) -> DamageOutcome:
+        """Apply target traits that modify the outcome of damage taken."""
         for trait in target.traits:
             if isinstance(trait, OnTakeDamageTrait):
                 damage_result = trait.on_take_damage(

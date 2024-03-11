@@ -109,9 +109,12 @@ class OnTakeDamageTrait(Trait):
         pass
 
 
+################################
 ### Concrete creature traits ###
+################################
 
 
+### Modify attack rolls ###
 class Grappler(OnRollAttackTrait):
     """The mimic has advantage on attack rolls against any creature grappled by it."""
 
@@ -126,7 +129,23 @@ class Grappler(OnRollAttackTrait):
         return {}
 
 
-### Traits ###
+class PackTactics(OnRollAttackTrait):
+    """Gets advantage on attack roll if a non-incapacitated ally is within 5 ft of target."""
+
+    def on_roll_attack(
+        self, creature: Creature, target: Creature, battle: Battle
+    ) -> dict[str, Any]:
+        for ally in battle.get_allies(creature):
+            if (
+                Condition.incapacitated not in ally.conditions
+                and get_distance(ally.position, target.position) <= 5
+            ):
+                logger.debug(f"{creature.name} attacks with advantage thanks to pack tactics!")
+                return {"advantage": True}
+        return {}
+
+
+### Modify damage rolls ###
 class MartialAdvantage(OnRollDamageTrait):
     """Once per turn, can deal an extra 7 (2d6) damage to a creature hit with a weapon attack if
     that creature is within 5 feet of a non-incapacitated ally."""
@@ -156,22 +175,7 @@ class MartialAdvantage(OnRollDamageTrait):
         return damage_roll
 
 
-class PackTactics(OnRollAttackTrait):
-    """Gets advantage on attack roll if a non-incapacitated ally is within 5 ft of target."""
-
-    def on_roll_attack(
-        self, creature: Creature, target: Creature, battle: Battle
-    ) -> dict[str, Any]:
-        for ally in battle.get_allies(creature):
-            if (
-                Condition.incapacitated not in ally.conditions
-                and get_distance(ally.position, target.position) <= 5
-            ):
-                logger.debug(f"{creature.name} attacks with advantage thanks to pack tactics!")
-                return {"advantage": True}
-        return {}
-
-
+### Mutate creature state after doing damage ###
 class Rampage(OnDealDamageTrait):
     """When the gnoll reduces a creature to 0 hit points with a melee attack on its turn, the gnoll
     can take a bonus action to move up to half its speed and make a bite attack.
@@ -179,8 +183,7 @@ class Rampage(OnDealDamageTrait):
 
     def on_deal_damage(self, creature: Creature, target: Creature, damage_outcome: DamageOutcome):
         """
-        TODO:
-        - ugh add an allowed bonus action that lasts for one turn
+        TODO: ugh add an allowed bonus action that lasts for one turn
         """
         if damage_outcome in {
             DamageOutcome.dead,
@@ -190,6 +193,7 @@ class Rampage(OnDealDamageTrait):
             creature.remaining_movement += creature.speed // 2
 
 
+### Modify damage taken ###
 class UndeadFortitude(OnTakeDamageTrait):
     """Trait for zombies."""
 
@@ -231,6 +235,7 @@ TRAITS = {
     "grappler": Grappler,
     "martial_advantage": MartialAdvantage,
     "pack_tactics": PackTactics,
+    "rampage": Rampage,
     "undead_fortitude": UndeadFortitude,
 }
 

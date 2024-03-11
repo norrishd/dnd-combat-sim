@@ -53,6 +53,7 @@ class Creature:
         ac: int,
         hp: Union[str, int],  # e.g. '5d6' or 16
         abilities: Union[Abilities, list[int]] = Abilities(10, 10, 10, 10, 10, 10),
+        actions: Optional[Sequence[str]] = None,  # Optional non-attack actions, e.g. teleport
         attack_bonus: Optional[int] = None,  # Overrides proficiency + mods if provided
         attacks: Sequence[Union[Attack, str]] = None,
         cond_immunities: Optional[Collection[Condition]] = None,
@@ -123,6 +124,7 @@ class Creature:
         self.name = name
         self.ac = ac
         self.abilities = Abilities(*abilities) if isinstance(abilities, list) else abilities
+        self.actions = actions
         self.cr = cr
         # Parse hit points
         if isinstance(hp, str):
@@ -158,7 +160,7 @@ class Creature:
                 for attack in attacks
             ]
         if creature_type == CreatureType.humanoid:
-            self.attacks.append(Attack.init("unarmed strike"))
+            self.attacks.append(Attack.init("unarmed_strike"))
         self.cond_immunities = cond_immunities or set()
         self.creature_subtype = creature_subtype
         self.creature_type = creature_type
@@ -172,11 +174,21 @@ class Creature:
         self.proficiency = proficiency
         self.resistances = resistances or set()
         self.save_proficiencies = {
-            Ability[save] if isinstance(save, str) else save for save in (save_proficiencies or [])
+            Ability[save] if isinstance(save, str) else save
+            for save in (save_proficiencies or [])
+            if save
         }
         self.senses = senses or set()
-        self.skill_proficiencies = skill_proficiencies or set()
-        self.skill_expertises = skill_expertises or set()
+        self.skill_proficiencies = {
+            Skill[skill] if isinstance(skill, str) else skill
+            for skill in (skill_proficiencies or [])
+            if skill
+        }
+        self.skill_expertises = {
+            Skill[skill] if isinstance(skill, str) else skill
+            for skill in (skill_expertises or [])
+            if skill
+        }
         self.speed = speed
         self.speed_fly = speed_fly
         self.speed_hover = speed_hover
@@ -201,36 +213,34 @@ class Creature:
         cls, monster: str, name: Optional[str] = None, make_death_saves: bool = False
     ) -> Creature:
         """Create a creature from a monster template."""
-        stats = MONSTERS.loc[monster]
+        stats = MONSTERS.loc[monster].to_dict()
 
         # Parse fields that need it
-        # saves = stats["saving_throw_proficiencies"]
-        # saves = saves.split(",") if saves else []
-        # skills = stats["skill_proficiencies"]
-        # skills = skills.split(",") if skills else []
+        stats["name"] = monster.title() if name is None else name.title()
+        stats["abilities"] = [stats.pop(ability) for ability in Ability.__members__]
         size = Size[stats["size"]]
-        attacks = [Attack.init(attack, size=size) for attack in stats["attacks"].split(",")]
-        breakpoint()
-        return cls(
-            name=monster.title() if name is None else name.title(),
-            ac=stats["ac"],
-            hp=stats["hp"],
-            abilities=[stats[ability] for ability in Ability.__members__],
-            # save_proficiencies=[] stats["save_proficiencies"],
-            # skill_proficiencies=skills,
-            attacks=attacks,
-            cr=stats["cr"],
-            creature_type=CreatureType[stats["type"]],
-            immunities=stats["immunities"],
-            has_shield=stats["has_shield"],
-            make_death_saves=make_death_saves,
-            num_attacks=stats["num_attacks"],
-            proficiency=stats["proficiency"],
-            resistances=stats["resistances"],
-            size=size,
-            traits=(stats["traits"] or "").split(","),
-            vulnerabilities=stats["vulnerabilities"],
-        )
+        stats["size"] = size
+        stats["attacks"] = [
+            Attack.init(attack, size=size) for attack in (stats["attacks"] or "").split(",")
+        ]
+        stats["creature_type"] = CreatureType[stats["creature_type"]]
+        stats["make_death_saves"] = make_death_saves
+        if stats["senses"]:
+            stats["senses"] = [Sense[sense] for sense in stats["senses"].split(",")]
+
+        for key in [
+            "cond_immunities",
+            "immunities",
+            "resistances",
+            "save_proficiencies",
+            "skill_proficiencies",
+            "skill_expertises",
+            "traits",
+            "vulnerabilities",
+        ]:
+            stats[key] = stats[key].split(",") if stats[key] else None
+
+        return cls(**stats)
 
     def __repr__(self) -> str:
         return f"{self.name} ({self.hp}/{self.max_hp})"
@@ -288,13 +298,10 @@ class Creature:
         """Modify the damage dealt by an attack."""
         for dtype in attack_damage.damages:
             if dtype in self.immunities:
-                # logger.debug(f"{self.name} is immune to {str(dtype)} damage.")
                 attack_damage.damages.pop(dtype)
             elif dtype in self.vulnerabilities:
-                # logger.debug(f"{self.name} is vulnerable to {str(dtype)} damage.")
                 attack_damage.damages[dtype] *= 2
             elif dtype in self.resistances:
-                # logger.debug(f"{self.name} is resistant to {str(dtype)} damage.")
                 attack_damage.damages[dtype] //= 2
 
         return attack_damage

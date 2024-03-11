@@ -65,11 +65,13 @@ def load_monsters(*args, **kwargs) -> pd.DataFrame:
             "speed_fly": 0,
             "speed_swim": 0,
             "num_attacks": 1,
-            "attacks_different": False,
+            "different_attacks": False,
             "versatile": True,
         },
     )
-    monsters[["num_hands", "num_attacks"]] = monsters[["num_hands", "num_attacks"]].astype(int)
+
+    int_cols = ["num_attacks", "num_hands", "speed", "speed_hover", "speed_fly", "speed_swim"]
+    monsters[int_cols] = monsters[int_cols].astype(int)
     monsters = monsters.fillna(np.nan).replace([np.nan], [None])
 
     return monsters

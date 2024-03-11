@@ -1,4 +1,4 @@
-name,size,type,subtype,ac,has_shield,hp,speed,speed_hover,speed_fly,speed_swim,str,dex,con,int,wis,cha,save_proficiencies,skill_proficiencies,skill_expertises,vulnerabilities,resistances,immunities,cond_immunities,senses,cr,proficiency,traits,num_attacks,attacks_different,attacks,actions,num_hands
+name,size,creature_type,creature_subtype,ac,has_shield,hp,speed,speed_hover,speed_fly,speed_swim,str,dex,con,int,wis,cha,save_proficiencies,skill_proficiencies,skill_expertises,vulnerabilities,resistances,immunities,cond_immunities,senses,cr,proficiency,traits,num_attacks,different_attacks,attacks,actions,num_hands
 bandit,medium,humanoid,,12,,2d8,,,,,11,12,12,10,10,10,,,,,,,,,1/8,2,,,,"scimitar,light_crossbow",,
 blink dog,medium,fey,,13,,4d8,40,,,,12,17,12,10,13,11,,"perception,stealth",,,,,,,1/4,2,keen_hearing_and_smell,,,bite_d6,teleport,
 bullywug,medium,humanoid,bullywug,15,TRUE,2d8,20,,,40,12,12,13,7,10,7,,stealth,,,,,,,1/4,2,"amphibious,swamp_camouflage,standing_leap",2,TRUE,"bite_d4_b,spear",,
