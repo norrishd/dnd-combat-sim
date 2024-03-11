@@ -1,4 +1,4 @@
-key,name,melee,damage,two_handed_damage,range,range_long,type,ammunition,finesse,heavy,light,loading,reach,thrown,trait
+key,name,melee,damage,two_handed_damage,range,range_long,type,ammunition,finesse,heavy,light,loading,reach,thrown,conditions
 club,club,TRUE,1d4 bludgeoning,,,,simple,,,,TRUE,,,,
 dagger,dagger,TRUE,1d4 piercing,,20,60,simple,,TRUE,,,,,TRUE,
 greatclub,greatclub,TRUE,,1d8 bludgeoning,,,simple,,,,,,,,

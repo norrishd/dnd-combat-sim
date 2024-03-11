@@ -1,17 +1,25 @@
 """
-# TRAITS
-Adhesive (Object Form Only). The mimic adheres to anything that touches it. A Huge or smaller creature adhered to the mimic is also grappled by it (escape DC 13). Ability checks made to escape this grapple have disadvantage.
+# To implement:
 
-aggressive. As a bonus action, the orc can move up to its speed toward a hostile creature that it can see.
+Adhesive (Object Form Only). The mimic adheres to anything that touches it. A Huge or smaller
+creature adhered to the mimic is also grappled by it (escape DC 13). Ability checks made to escape
+this grapple have disadvantage.
+
+aggressive. As a bonus action, the orc can move up to its speed toward a hostile creature that it
+can see.
 
 amphibious (bullywug) - can breathe air and water.
 
-Antimagic Susceptibility. The sword is incapacitated while in the area of an antimagic field. If targeted by dispel magic, the sword must succeed on a Constitution saving throw against the caster's spell save DC or fall unconscious for 1 minute.
+Antimagic Susceptibility. The sword is incapacitated while in the area of an antimagic field. If
+targeted by dispel magic, the sword must succeed on a Constitution saving throw against the caster's
+spell save DC or fall unconscious for 1 minute.
 
 Dark Devotion. The cultist has advantage on saving throws against being charmed or frightened.
 
-False Appearance. While the sword remains motionless and isn't flying, it is indistinguishable from a normal sword.
-False Appearance (Object Form Only). While the mimic remains motionless, it is indistinguishable from an ordinary object.
+False Appearance. While the sword remains motionless and isn't flying, it is indistinguishable from
+a normal sword.
+False Appearance (Object Form Only). While the mimic remains motionless, it is indistinguishable
+from an ordinary object.
 
 Grappler. The mimic has advantage on attack rolls against any creature grappled by it.
 
@@ -21,19 +29,28 @@ Keen Sight. The hippogriff has advantage on Wisdom (Perception) checks that rely
 
 Keen Smell. The rat has advantage on Wisdom (Perception) checks that rely on smell.
 
-Martial advantage: Once per turn, the hobgoblin can deal an extra 7 (2d6) damage to a creature it hits with a weapon attack if that creature is within 5 feet of an ally of the hobgoblin that isn’t incapacitated.
+Martial advantage: Once per turn, the hobgoblin can deal an extra 7 (2d6) damage to a creature it
+hits with a weapon attack if that creature is within 5 feet of an ally of the hobgoblin that isn't
+incapacitated.
 
-Nimble Escape. The goblin can take the Disengage or Hide action as a bonus action on each of its turns.
+Nimble Escape. The goblin can take the Disengage or Hide action as a bonus action on each of its
+turns.
 
-Pack Tactics (kobold). The kobold has advantage on an attack roll against a creature if at least one of the kobold's allies is within 5 feet of the creature and the ally isn't incapacitated.
+Pack Tactics (kobold). The kobold has advantage on an attack roll against a creature if at least one
+of the kobold's allies is within 5 feet of the creature and the ally isn't incapacitated.
 
-Rampage (gnoll) - When reduces a creature to 0 hit points with a melee attack on its turn, can take a bonus action to move up to half its speed and make a bite attack.
+Rampage (gnoll) - When reduces a creature to 0 hit points with a melee attack on its turn, can take
+a bonus action to move up to half its speed and make a bite attack.
 
-Shapechanger. The mimic can use its action to polymorph into an object or back into its true, amorphous form. Its statistics are the same in each form. Any equipment it is wearing or carrying isn't transformed. It reverts to its true form if it dies.
+Shapechanger. The mimic can use its action to polymorph into an object or back into its true,
+amorphous form. Its statistics are the same in each form. Any equipment it is wearing or carrying
+isn't transformed. It reverts to its true form if it dies.
 
-Standing Leap (bullywug) - can long jump up to 20 feet and high jump up to 10 feet, with or without a running start.
+Standing Leap (bullywug) - can long jump up to 20 feet and high jump up to 10 feet, with or without
+a running start.
 
-Sunlight Sensitivity (kobold). While in sunlight, the kobold has disadvantage on attack rolls, as well as on Wisdom (Perception) checks that rely on sight.
+Sunlight Sensitivity (kobold). While in sunlight, the kobold has disadvantage on attack rolls, as
+well as on Wisdom (Perception) checks that rely on sight.
 
 Swamp Camouflage (bullywug). advantage on Dexterity (Stealth) checks made to hide in swampy terrain.
 """
@@ -46,14 +63,30 @@ from dnd_combat_sim.conditions import Condition
 from dnd_combat_sim.creature import Creature
 from dnd_combat_sim.dice import roll
 from dnd_combat_sim.rules import Ability, DamageType
-from dnd_combat_sim.trait import Battle, OnRollAttackTrait, OnRollDamageTrait, OnTakeDamageTrait
+from dnd_combat_sim.trait import (
+    Battle,
+    OnDealDamageTrait,
+    OnRollAttackTrait,
+    OnRollDamageTrait,
+    OnTakeDamageTrait,
+)
+from dnd_combat_sim.utils import get_distance
 
 logger = logging.getLogger(__name__)
 
 
-def get_distance(creature1: Creature, creature2: Creature) -> float:
-    """Calculate the distance between two creatures."""
-    return ((creature1.x - creature2.x) ** 2 + (creature1.y - creature2.y) ** 2) ** 0.5
+class Grappler(OnRollAttackTrait):
+    """The mimic has advantage on attack rolls against any creature grappled by it."""
+
+    def on_roll_attack(
+        self, creature: Creature, target: Creature, battle: Battle
+    ) -> dict[str, Any]:
+        if Condition.grappled in target.conditions:
+            logger.debug(
+                f"{creature.name} has advantage on attack roll against grappled {target.name}."
+            )
+            return {"advantage": True}
+        return {}
 
 
 ### Traits ###
@@ -66,7 +99,7 @@ class MartialAdvantage(OnRollDamageTrait):
 
     def on_roll_damage(
         self, creature: Creature, damage_roll: AttackDamage, battle: Battle
-    ) -> dict[str, Any]:
+    ) -> AttackDamage:
         if self.last_used == battle.round:
             return damage_roll
 
@@ -89,16 +122,31 @@ class MartialAdvantage(OnRollDamageTrait):
 class PackTactics(OnRollAttackTrait):
     """Gets advantage on attack roll if a non-incapacitated ally is within 5 ft of target."""
 
-    def __init__(self) -> None:
-        super().__init__()
-
     def on_roll_attack(
         self, creature: Creature, target: Creature, battle: Battle
     ) -> dict[str, Any]:
         for ally in battle.get_allies(creature):
-            if Condition.incapacitated not in ally.conditions and get_distance(ally, target) <= 5:
+            if (
+                Condition.incapacitated not in ally.conditions
+                and get_distance(ally.position, target.position) <= 5
+            ):
                 logger.debug(f"{creature.name} attacks with advantage thanks to pack tactics!")
                 return {"advantage": True}
+        return {}
+
+
+class Rampage(OnDealDamageTrait):
+    """When the gnoll reduces a creature to 0 hit points with a melee attack on its turn, the gnoll
+    can take a bonus action to move up to half its speed and make a bite attack.
+    """
+
+    def on_deal_damage(self, creature: Creature, target: Creature):
+        """
+        TODO:
+        - check if creature was reduced to 0 HP
+        - ugh add an allowed bonus action that lasts for one turn
+        - boost remaining movement by half usual max
+        """
 
 
 class UndeadFortitude(OnTakeDamageTrait):
@@ -109,7 +157,7 @@ class UndeadFortitude(OnTakeDamageTrait):
         creature: Creature,
         damage: AttackDamage,
         damage_result: DamageOutcome,
-    ) -> None:
+    ) -> DamageOutcome:
         """If damage reduces the zombie to 0 hit points, it must make a Constitution saving throw
         with a DC of 5 + the damage taken, unless the damage is radiant or from a critical hit. On a
         success, the zombie drops to 1 hit point instead.
@@ -139,6 +187,7 @@ class UndeadFortitude(OnTakeDamageTrait):
 
 
 TRAITS = {
+    "grappler": Grappler,
     "martial_advantage": MartialAdvantage,
     "pack_tactics": PackTactics,
     "undead_fortitude": UndeadFortitude,

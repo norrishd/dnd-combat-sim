@@ -1,4 +1,4 @@
-﻿key,name,melee,damage,two_handed_damage,bonus_damage,range,range_long,ammunition,finesse,heavy,light,loading,reach,thrown,trait,recharge
+﻿key,name,melee,damage,two_handed_damage,bonus_damage,range,range_long,ammunition,finesse,heavy,light,loading,reach,thrown,conditions,recharge
 beak_d10,beak,TRUE,1d10 piercing,,,,,,,,,,,,,
 bite_d4,bite,TRUE,1d4 piercing,,,,,,TRUE,,,,,,,
 bite_d4_b,bite,TRUE,1d4 bludgeoning,,,,,,,,,,,,,

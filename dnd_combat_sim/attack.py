@@ -94,7 +94,21 @@ class DamageOutcome(StrEnum):
 
 @dataclass(repr=False, eq=False)
 class Attack:
-    """Base class for an attack that a creature can make."""
+    """Base class for an attack that a creature can make.
+
+    Args:
+        name: E.g. "slam", "bite", "longsword"
+        melee: Whether the attack is a melee attack.
+        damage: The damage to roll on a hit, e.g. "1d8 bludgeoning"
+        two_handed_damage: The damage to roll on a hit with two hands, e.g. "1d10 slashing". Weapons
+            with the 'versatile' property can be wielded with one or two hands, yielding different
+            amounts of damage.
+        bonus_damage: Extra damage to roll on a hit, e.g. "1d6 fire"
+        range: The normal and long range of a ranged weapon, in feet, whether fired or thrown.
+        is_weapon: Whether the attack is a weapon attack, as opposed to a natural attack like a
+            bite or claw.
+
+    """
 
     name: str
     melee: bool = True
@@ -115,7 +129,8 @@ class Attack:
     quantity: Optional[int] = None
     recharge: Optional[str] = None  # E.g. "5-6" or "6"
     size: Size = Size.medium  # Creatures attack with disadvantage using a larger weapon
-    proficient: bool = True  # Specific to the wielder
+    proficient: bool = True  # Specific to the wielder - TODO move to Creature
+    conditions: Optional[list[str]] = None  # E.g. for net, lance, monster attacks
 
     def __post_init__(self) -> None:
         if isinstance(self.damage, str):
@@ -168,6 +183,8 @@ class Attack:
 
         range_ = (int(attack["range"]), int(attack["range_long"])) if attack["range"] else None
 
+        breakpoint()
+
         return cls(
             name=attack["name"],
             melee=attack["melee"],
@@ -189,6 +206,7 @@ class Attack:
             recharge=attack["recharge"],
             size=size,
             proficient=proficient,
+            conditions=attack["conditions"],
         )
 
     def roll_damage(

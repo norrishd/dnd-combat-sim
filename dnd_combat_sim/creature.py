@@ -10,10 +10,18 @@ from dataclasses import dataclass
 from typing import Collection, List, Optional, Sequence, Union
 
 from dnd_combat_sim.attack import Attack, AttackDamage, AttackRoll, DamageOutcome, DamageType
-from dnd_combat_sim.conditions import Condition
 from dnd_combat_sim.dice import roll, roll_d20
-from dnd_combat_sim.rules import Ability, CreatureType, Sense, Size, Skill
-from dnd_combat_sim.utils import MONSTERS
+from dnd_combat_sim.rules import (
+    Ability,
+    Condition,
+    CreatureType,
+    Point,
+    Sense,
+    Size,
+    Skill,
+    SKILL_MAPPING,
+)
+from dnd_combat_sim.utils import MONSTERS, get_distance
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +167,7 @@ class Creature:
         self.make_death_saves = make_death_saves
         self.num_attacks = num_attacks
         self.num_hands = num_hands
+        self.position = Point(5, 5)
         self.proficiency = proficiency
         self.resistances = resistances or set()
         self.save_proficiencies = {
@@ -167,14 +176,14 @@ class Creature:
         self.senses = senses or set()
         self.skill_proficiencies = skill_proficiencies or set()
         self.skill_expertises = skill_expertises or set()
-        self.vulnerabilities = vulnerabilities or set()
         self.speed = speed
         self.speed_fly = speed_fly
         self.speed_hover = speed_hover
         self.speed_swim = speed_swim
-        self.traits = traits or []
         # self.spell_slots_total = spell_slots or {}
         # self.spell_slots = spell_slots_total.copy() if spell_slots
+        self.traits = traits or []
+        self.vulnerabilities = vulnerabilities or set()
 
         # Combat stuff
         self.remaining_movement: int = speed
@@ -256,6 +265,15 @@ class Creature:
         best_options = attack_options[list(attack_options.keys())[0]]
         return random.choice(best_options)
 
+    def grapple(
+        self, target: Creature, advantage: bool = False, disadvantage: bool = False
+    ) -> bool:
+        """Attempt to grapple a target."""
+        check = self.roll_check(Skill.athletics, advantage=advantage, disadvantage=disadvantage)
+        contested_by = target.roll_check([Skill.acrobatics, Skill.athletics])
+
+        return check > contested_by
+
     def heal(self, amount: int, wake_up: bool = True) -> None:
         """Recover hit points."""
         self.hp = min(self.hp + amount, self.max_hp)
@@ -276,8 +294,6 @@ class Creature:
             elif dtype in self.resistances:
                 # logger.debug(f"{self.name} is resistant to {str(dtype)} damage.")
                 attack_damage.damages[dtype] //= 2
-
-        # TODO handle conditions and traits
 
         return attack_damage
 
@@ -308,15 +324,28 @@ class Creature:
 
         return AttackRoll(rolled, modifier, self._is_crit(rolled))
 
+    def roll_check(
+        self,
+        ability_or_skill: Optional[Collection[Union[Ability, Skill]]] = None,
+        advantage: bool = False,
+        disadvantage: bool = False,
+    ) -> int:
+        """Roll a skill or ability check."""
+        rolled = roll_d20(advantage=advantage, disadvantage=disadvantage)
+
+        modifier = 0
+        if ability_or_skill is not None:
+            modifier = self._get_modifier(ability_or_skill)
+
+        return rolled + modifier
+
     def roll_damage(self, attack: Attack, crit: bool = False) -> AttackDamage:
         """Roll damage for an attack that has hit."""
         # Use two-handed damage if have a spare hand
         damage_modifier = self._get_attack_modifier(attack)
 
-        available_hands = self.num_hands - 1 if self.has_shield else self.num_hands
-        can_use_two_handed = available_hands >= 2
         damage = attack.roll_damage(
-            two_handed=can_use_two_handed,
+            two_handed=self._get_num_free_hands() >= 2,
             crit=crit,
             damage_modifier=damage_modifier,
             use_average=False,
@@ -360,6 +389,7 @@ class Creature:
         self, ability: Ability, advantage: bool = False, disadvantage: bool = False
     ) -> int:
         """Roll a saving throw for a given ability."""
+
         save = roll_d20(advantage=advantage, disadvantage=disadvantage)
         modifier = self.abilities.get_modifier(ability)
         if ability in self.save_proficiencies:
@@ -378,6 +408,7 @@ class Creature:
             new_creature.hp = new_creature.max_hp = self._roll_hit_points()
         else:
             new_creature.hp = new_creature.max_hp
+        new_creature.start_turn()
         # new_creature.spell_slots = self.total_spell_slots.copy()
         new_creature.conditions = set()
         new_creature.death_saves = {"successes": 0, "failures": 0}
@@ -390,7 +421,7 @@ class Creature:
         self.attack_used = False
         self.attacks_used_this_turn = set()
         self.bonus_action_used = False
-        self.reactxion_used = False
+        self.reaction_used = False
 
         if Condition.dying in self.conditions:
             value, result = self.roll_death_save()
@@ -446,6 +477,18 @@ class Creature:
             return DamageOutcome.still_dying
 
     # Private methods
+    def _check_if_can_grapple(self, target: Creature) -> bool:
+        """Check if the creature can grapple a target.
+
+        Must have at least 1 free hand, be within reach, and target can't be more than 1 size
+        larger.
+        """
+        return any(
+            ((target.size - self.size) > 1),
+            (self._get_num_free_hands() < 1),
+            (get_distance(self.position, target.position) > 5),
+        )
+
     def _die(self) -> str:
         self.conditions.add(Condition.dead)
         self.conditions.discard(Condition.dying)
@@ -461,22 +504,57 @@ class Creature:
         - dexterity for ranged attacks
           - or strength for thrown weapons, or either for thrown finesse weapons
         """
-        str_modifier = self._get_modifier(Ability.str)
-        dex_modifier = self._get_modifier(Ability.dex)
-
         if attack.finesse:
-            return max(str_modifier, dex_modifier)
+            return self._get_modifier([Ability.str, Ability.dex])
         if attack.melee:
-            return str_modifier
+            return self._get_modifier(Ability.str)
 
-        return dex_modifier
+        return self._get_modifier(Ability.dex)
 
-    def _get_modifier(self, ability: Ability) -> int:
-        """Get the modifier for an ability score."""
-        score = getattr(self.abilities, ability.name)
-        return (score - 10) // 2
+    def _get_modifier(
+        self, skill_or_ability: Union[Ability, Skill, Collection[Union[Ability]]]
+    ) -> int:
+        """Get the modifier for an ability or skill.
+
+        If multiple skills or abilities are passed, return whichever modifier is highest.
+        """
+        if isinstance(skill_or_ability, (Ability, Skill)):
+            skill_or_ability = [skill_or_ability]
+
+        best_modifier = -5
+        for option in skill_or_ability:
+            if isinstance(option, Ability):
+                ability = option
+                skill = None
+            if isinstance(option, Skill):
+                skill = option
+                ability = SKILL_MAPPING[option]
+
+            modifier = (getattr(self.abilities, ability.name) - 10) // 2
+            if skill is not None:
+                if skill in self.skill_expertises:
+                    modifier += self.proficiency * 2
+                elif skill in self.skill_proficiencies:
+                    modifier += self.proficiency
+            if modifier > best_modifier:
+                best_modifier = modifier
+
+        return best_modifier
+
+    def _get_num_free_hands(self, grappling: bool = False):
+        """Get number of free hands available. Assume that a shield is always being held, but any
+        weapon can be sheathed or unsheathed as a free object interaction.
+        """
+        free_hands = self.num_hands
+        if self.has_shield:
+            free_hands -= 1
+        if grappling:
+            free_hands -= 1
+
+        return free_hands
 
     def _is_crit(self, rolled: int):
+        """Other rules can apply, e.g. with certain feats."""
         return rolled == 20
 
     def _reset_death_saves(self, wake_up: bool = False):
@@ -491,16 +569,3 @@ class Creature:
         hp = roll(dice) + const_mod * self.num_hit_die
 
         return int(max(hp, 1))
-
-
-class TempCondition:
-    """Temporary condition that can be applied to a creature."""
-
-    def __init__(
-        self,
-        condition: Condition,
-        escape_dc: Optional[int],
-        contester: Optional[Creature],
-        contester_ability: Optional[list[Ability]],
-    ) -> None:
-        pass

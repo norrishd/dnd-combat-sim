@@ -40,6 +40,11 @@ E.g. to see a skeleton go at it with a zombie:
 - content
   - [x] all simple & martial weapons
   - [x] a dozen sample monsters
+- traits
+  - Grappler
+  - Martial advantage
+  - Pack tactics
+  - Undead fortitude
 
 ## TODOs
 
@@ -110,14 +115,14 @@ E.g. for an ogre hit by a mimic's pseudopod.
   - haven't implemented nimble escape or ranged dynamics
 - gnoll vs hobgoblin (1/2)
   - gnoll 70%
-  - Haven't implemented rampage (though not relevant for 1v1)
+    - Haven't implemented rampage (though not relevant for 1v1)
 - zombie vs blink dog (1/4)
   - zombie 85%
-  - skeleton vulnerable to bludgeoning damage
+    - skeleton is vulnerable to bludgeoning damage
 - orc vs lizardfolk (1/2)
   - lizardfolk 78%
 - half-ogre vs hippogriff (1)
-  - hippogriff 55%
+  - half-ogre 69%
 - mimic vs ogre (2)
 
 ## Combat flow:

@@ -121,6 +121,12 @@ class Encounter1v1:
                 # 6. Actually do the damage, then handle traits like undead fortitude
                 damage_result = target.take_damage(attack_damage, crit=attack_roll.is_crit)
                 damage_result = self._modify_damage_result(target, attack_damage, damage_result)
+            if attack.traits is not None:
+                for trait in attack.traits:
+                    if trait in TRAITS:
+                        damage_result = TRAITS[trait].on_hit(
+                            attacker, target, attack_damage, damage_result
+                        )
 
             if damage_result == DamageOutcome.knocked_out:
                 log_and_pause(f"{target.name} is down!", level=logging.DEBUG)
