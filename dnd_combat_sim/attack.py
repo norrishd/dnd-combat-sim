@@ -1,3 +1,5 @@
+"""Module with classes to represent weapon attacks, damage rolls and attack outcomes."""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -42,6 +44,16 @@ class DamageRoll:
         dice, damage_type = damage_str.split(" ")
         return cls(dice, DamageType[damage_type])
 
+    @property
+    def num_dice(self) -> int:
+        """Get the number of dice to roll."""
+        return int(self.dice.split("d")[0])
+
+    @property
+    def die_size(self) -> int:
+        """Get the size of the dice to roll."""
+        return int(self.dice.split("d")[1])
+
     def __repr__(self) -> str:
         return f"{self.dice} {str(self.damage_type)}"
 
@@ -64,12 +76,14 @@ class AttackDamage:
 
     @property
     def total(self) -> int:
+        """Get the total damage dealt from all damage types."""
         return sum(self.damages.values())
 
 
 class DamageOutcome(StrEnum):
     """Possible outcomes from taking damage."""
 
+    # pylint: disable=invalid-name
     alive = auto()
     knocked_out = auto()
     still_dying = auto()  # If hit a creature already making death saving throws
@@ -78,7 +92,7 @@ class DamageOutcome(StrEnum):
     reanimated = auto()  # E.g. undead fortitude trait
 
 
-@dataclass(repr=False)
+@dataclass(repr=False, eq=False)
 class Attack:
     """Base class for an attack that a creature can make."""
 
@@ -137,8 +151,11 @@ class Attack:
         # See DMG 'Creating a Monster Stat Block' p278
         if attack["is_weapon"] and size > Size.medium:
             for damage in ["damage", "two_handed_damage"]:
-                dice, damage_type = damage.split(" ")
-                num_dice, die_size = map(int, dice.split("d"))
+                if attack[damage] is None:
+                    continue
+                dice = attack[damage]
+                roll, damage_type = dice.split(" ")
+                num_dice, die_size = map(int, roll.split("d"))
 
                 if size == Size.large:
                     num_dice = num_dice * 2
@@ -149,7 +166,7 @@ class Attack:
 
                 attack[damage] = DamageRoll(f"{num_dice}d{die_size}", DamageType[damage_type])
 
-        range = (int(attack["range"]), int(attack["range_long"])) if attack["range"] else None
+        range_ = (int(attack["range"]), int(attack["range_long"])) if attack["range"] else None
 
         return cls(
             name=attack["name"],
@@ -157,7 +174,7 @@ class Attack:
             damage=attack["damage"],
             two_handed_damage=attack["two_handed_damage"],
             bonus_damage=attack["bonus_damage"],
-            range=range,
+            range=range_,
             is_weapon=attack["is_weapon"],
             type=attack["type"],
             ammunition=attack["ammunition"],
@@ -198,8 +215,20 @@ class Attack:
 
         return AttackDamage(all_damages, from_crit=crit)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Attack):
+            return False
+
+        # Don't consider weapons different if they have different amounts of ammo left
+        return all(
+            getattr(self, attr) == getattr(other, attr)
+            for attr in self.__dict__
+            if attr != "quantity"
+        )
+
     def __repr__(self) -> str:
-        ret = f"{self.name}:"
+        size_str = f"{self.size.name.title()} " if self.size > Size.medium else ""
+        ret = f"{size_str}{self.name.title()}:"
         if self.is_weapon:
             if self.type in ["simple", "martial"]:
                 ret += f" {self.type}"
@@ -209,6 +238,8 @@ class Attack:
             ret += f" Reach {10 if self.reach else 5} ft"
             if self.thrown:
                 ret += f", range {self.range[0]}/{self.range[1]} ft thrown."
+            else:
+                ret += "."
         else:
             ret += f" Range {self.range[0]}/{self.range[1]} ft."
 
@@ -225,7 +256,9 @@ class Attack:
                     ret += " + "
                 ret += str(self.bonus_damage)
 
-        if self.ammunition or self.thrown:
-            ret += f". Quantity={self.quantity}"
+        if self.ammunition:
+            ret += f" (ammunition: {self.quantity})"
+        elif self.thrown:
+            ret += f" (quantity: {self.quantity})"
 
         return ret

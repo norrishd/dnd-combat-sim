@@ -1,8 +1,24 @@
 # dnd-combat-sim
 
-A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons 5e
+A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons 5e.
 
-## Done
+Ever wanted to see who would win in a 5 skeletons vs 1 ogre fight? Now you can
+
+## Setup
+
+    cd dnd-combat-sim
+    pip install poetry
+    poetry install 
+
+## Usage
+
+    poetry run python run_combat.py {MONSTER1] [MONSTER2] [-n NUM_ENCOUNTERS]
+
+E.g. to see a skeleton go at it with a zombie:
+
+    poetry run python run_combat.py skeleton zombie
+
+## Implemented
 
 - combat / creatures
   - [x] rolling init
@@ -26,29 +42,36 @@ A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons
   - [x] a dozen sample monsters
 
 ## TODOs
-TempCondition
-- creature that caused it
-- optional fixed escape DC + ability to use
+
+TempCondition(
+condition: Condition,
+escape_dc: Optional[int],
+instigator: Optional[Creature],
+contested
+)
+
+E.g. for an ogre hit by a mimic's pseudopod.
+
 - ogre gets:
-Grappled(
-    causer=mimic,
-    escape_ability=Ability.str,
-    escape_dc=13,
-    disadvantage=True,
-    escape_with_action=True  # add a linker to`self.temp_actions` which `choose_action()` checks
-)
+  Grappled(
+  causer=mimic,
+  escape_ability=Ability.str,
+  escape_dc=13,
+  disadvantage=True,
+  escape_with_action=True # add a linker to`self.temp_actions` which `choose_action()` checks
+  )
 - mimic gets:
-Grappling(
-    target=ogre,
-    attack_modifier={"advantage": True}
-)
+  Grappling(
+  target=ogre,
+  attack_modifier={"advantage": True}
+  )
 - if successfully ogre uses action to escape grapple, must removed both conditions
 - also if Ogre dies (not jut KOs), remove both conditions
 
 - Weapons that deal temporary conditions (pseudopod to start with)
 - Grappler trait - advantage on target you're grappling
 - Adhesive trait - auto-grapple huge or smaller creature when hit with pseudopod
-  - escape DC 13 strength check (roll with disadvantage) 
+  - escape DC 13 strength check (roll with disadvantage)
 - Rampage: temporary new bonus action option
 - 1D movement
 - thrown weapons

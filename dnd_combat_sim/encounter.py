@@ -160,6 +160,7 @@ class MultiEncounter1v1:
             self.wins[winner.name] += 1
             log_and_pause(f"Winner: {winner}")
 
-        print("\n")
-        for creature, wins in self.wins.items():
-            print(f"{creature}: {wins} win(s)")
+        if self.num_runs > 1:
+            print("\n")
+            for creature, wins in self.wins.items():
+                print(f"{creature}: {wins} win(s)")
