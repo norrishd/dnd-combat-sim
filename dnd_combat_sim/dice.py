@@ -1,3 +1,5 @@
+"""Helper functions for simulating rolling dice."""
+
 import random
 from typing import Union
 
@@ -17,7 +19,7 @@ def roll_d20(advantage: bool = False, disadvantage: bool = False, lucky: bool = 
     return result
 
 
-def roll(dice: Union[int, str], crit: bool = False, use_average: bool = False) -> int:
+def roll(dice: Union[int, str], crit: bool = False, use_average: bool = False) -> float:
     """Roll one or more dice with a given number of sides, e.g. for damage or healing.
 
     Args:

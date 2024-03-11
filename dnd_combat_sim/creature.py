@@ -7,7 +7,7 @@ import random
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Collection, List, Optional, Union
+from typing import Collection, List, Optional, Sequence, Union
 
 from dnd_combat_sim.attack import Attack, AttackDamage, AttackRoll, DamageOutcome, DamageType
 from dnd_combat_sim.conditions import Condition
@@ -45,7 +45,7 @@ class Creature:
         hp: Union[str, int],  # e.g. '5d6' or 16
         abilities: Union[Abilities, list[int]] = Abilities(10, 10, 10, 10, 10, 10),
         attack_bonus: Optional[int] = None,  # Overrides proficiency + mods if provided
-        attacks: list[Union[Attack, str]] = None,
+        attacks: Sequence[Union[Attack, str]] = None,
         cond_immunities: Optional[Collection[Condition]] = None,
         cr: Optional[float] = None,
         creature_subtype: Optional[str] = None,  # No mechanical meaning?
@@ -114,6 +114,7 @@ class Creature:
         self.name = name
         self.ac = ac
         self.abilities = Abilities(*abilities) if isinstance(abilities, list) else abilities
+        self.cr = cr
         # Parse hit points
         if isinstance(hp, str):
             self.num_hit_die, self.hit_die = map(int, hp.split("d"))  # E.g. "5d6" -> (5, 6)
@@ -121,28 +122,7 @@ class Creature:
         else:
             self.num_hit_die, self.hit_die = None, None
             self.hp = self.max_hp = hp
-        self.attack_bonus = attack_bonus
-        self.cond_immunities = cond_immunities or set()
-        self.cr = cr
-        self.immunities = immunities or set()
-        if proficiency is None:
-            if attack_bonus is not None:
-                proficiency = attack_bonus
-            elif cr is not None:
-                # DMG maps challenge rating to suggested proficiency bonus
-                proficiency = max(cr - 1, 0) // 4 + 2
-            else:
-                proficiency = 2
-        self.proficiency = proficiency
-        self.resistances = resistances or set()
-        self.save_proficiencies = {
-            Ability[save] if isinstance(save, str) else save for save in (save_proficiencies or [])
-        }
-        self.senses = senses or set()
-        self.skill_proficiencies = skill_proficiencies or set()
-        self.skill_expertises = skill_expertises or set()
-        self.vulnerabilities = vulnerabilities or set()
-        self.traits = traits or []
+        # Parse size
         if size is None and self.hit_die is not None:
             size = {
                 6: Size.small,
@@ -154,35 +134,57 @@ class Creature:
         elif isinstance(size, str):
             size = Size[size]
         self.size = size
-        self.attacks = [
-            Attack.init(attack, size=self.size) if isinstance(attack, str) else attack
-            for attack in attacks
-        ]
+        # Parse proficiency
+        if proficiency is None:
+            if cr is not None:
+                # DMG maps challenge rating to suggested proficiency bonus
+                proficiency = max(cr - 1, 0) // 4 + 2
+            else:
+                raise ValueError("Must provide at least one of ['proficiency', 'cr']")
+
+        self.attack_bonus = attack_bonus
+        if attacks is not None:
+            self.attacks = [
+                Attack.init(attack, size=self.size) if isinstance(attack, str) else attack
+                for attack in attacks
+            ]
         if creature_type == CreatureType.humanoid:
             self.attacks.append(Attack.init("unarmed strike"))
-        self.has_shield = has_shield
-        self.num_hands = num_hands
-        self.num_attacks = num_attacks
+        self.cond_immunities = cond_immunities or set()
+        self.creature_subtype = creature_subtype
+        self.creature_type = creature_type
         self.different_attacks = different_attacks
+        self.has_shield = has_shield
+        self.immunities = immunities or set()
+        self.make_death_saves = make_death_saves
+        self.num_attacks = num_attacks
+        self.num_hands = num_hands
+        self.proficiency = proficiency
+        self.resistances = resistances or set()
+        self.save_proficiencies = {
+            Ability[save] if isinstance(save, str) else save for save in (save_proficiencies or [])
+        }
+        self.senses = senses or set()
+        self.skill_proficiencies = skill_proficiencies or set()
+        self.skill_expertises = skill_expertises or set()
+        self.vulnerabilities = vulnerabilities or set()
         self.speed = speed
         self.speed_fly = speed_fly
         self.speed_hover = speed_hover
         self.speed_swim = speed_swim
-        # self.total_spell_slots = spell_slots or {}
-        # self.spell_slots = total_spell_slots.copy() if spell_slots
-        self.type_ = creature_type
-        self.subtype = creature_subtype
-        self.make_death_saves = make_death_saves
+        self.traits = traits or []
+        # self.spell_slots_total = spell_slots or {}
+        # self.spell_slots = spell_slots_total.copy() if spell_slots
 
         # Combat stuff
-        self.remaining_movement = speed
+        self.remaining_movement: int = speed
         self.attack_used: bool = False
-        self.attacks_used_this_turn = set()
-        self.bonus_action_used = False
-        self.reaction_used = False
-        self.conditions = set()
+        self.attacks_used_this_turn: set[Attack] = set()
+        self.bonus_action_used: bool = False
+        self.reaction_used: bool = False
+        self.conditions: set[Condition] = set()
         self.temp_hp: int = 0
-        self.death_saves = {"successes": 0, "failures": 0}
+        self.death_saves: dict[str, int] = {"successes": 0, "failures": 0}
 
     @classmethod
     def init(
@@ -372,7 +374,10 @@ class Creature:
             new_creature.name = name
 
         # Roll new HP; reset spell slots, conditions and death saves
-        new_creature.hp = new_creature.max_hp = self._roll_hit_points()
+        if self.num_hit_die is not None:
+            new_creature.hp = new_creature.max_hp = self._roll_hit_points()
+        else:
+            new_creature.hp = new_creature.max_hp
         # new_creature.spell_slots = self.total_spell_slots.copy()
         new_creature.conditions = set()
         new_creature.death_saves = {"successes": 0, "failures": 0}
@@ -385,7 +390,7 @@ class Creature:
         self.attack_used = False
         self.attacks_used_this_turn = set()
         self.bonus_action_used = False
-        self.reaction_used = False
+        self.reactxion_used = False
 
         if Condition.dying in self.conditions:
             value, result = self.roll_death_save()
@@ -485,7 +490,7 @@ class Creature:
         const_mod = self.abilities.get_modifier(Ability.con)
         hp = roll(dice) + const_mod * self.num_hit_die
 
-        return max(hp, 1)
+        return int(max(hp, 1))
 
 
 class TempCondition:

@@ -153,9 +153,9 @@ class Attack:
             for damage in ["damage", "two_handed_damage"]:
                 if attack[damage] is None:
                     continue
-                dice = attack[damage]
-                roll, damage_type = dice.split(" ")
-                num_dice, die_size = map(int, roll.split("d"))
+                attack_details: str = attack[damage]
+                dice, damage_type = attack_details.split(" ")
+                num_dice, die_size = map(int, dice.split("d"))
 
                 if size == Size.large:
                     num_dice = num_dice * 2
