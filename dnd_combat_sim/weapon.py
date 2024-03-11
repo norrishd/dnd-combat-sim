@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from enum import StrEnum, auto
 from typing import Collection, Optional, Union
 
 from dnd_combat_sim.dice import roll
@@ -14,17 +13,17 @@ from dnd_combat_sim.utils import ATTACKS
 
 class AttackRoll:
     """Class to represent the result of an attack roll to hit, including:
-
     - rolled component
     - modifier score (e.g. strength or dexterity modifier) and/or proficiency
-    - whether the roll was a critical hit.
+    - whether the roll was a critical hit
     """
 
-    def __init__(self, rolled: int, modifier: int, crit: bool) -> None:
+    def __init__(self, rolled: int, modifier: int, crit: bool, weapon: Weapon) -> None:
         self.total = rolled + modifier
         self.rolled = rolled
         self.modifier = modifier
         self.is_crit = crit
+        self.weapon = weapon
 
     def __repr__(self) -> str:
         symbol = "+" if self.modifier >= 0 else "-"
@@ -81,12 +80,12 @@ class AttackDamage:
 
 
 @dataclass(repr=False, eq=False)
-class Attack:
-    """Base class for an attack that a creature can make.
+class Weapon:
+    """Base class for a weapon or natural attack that a creature can make.
 
     Args:
-        name: E.g. "slam", "bite", "longsword"
-        melee: Whether the attack is a melee attack.
+        name: E.g. "longsword", "hand crossbow", "bite", "claws"
+        melee: Whether it's a melee (or ranged) attack.
         damage: The damage to roll on a hit, e.g. "1d8 bludgeoning"
         two_handed_damage: The damage to roll on a hit with two hands, e.g. "1d10 slashing". Weapons
             with the 'versatile' property can be wielded with one or two hands, yielding different
@@ -113,7 +112,6 @@ class Attack:
     loading: bool = False
     reach: bool = False
     thrown: bool = False
-    trait: Optional[list[str]] = None  # E.g. for net or lance TODO
     quantity: Optional[int] = None
     recharge: Optional[str] = None  # E.g. "5-6" or "6"
     size: Size = Size.medium  # Creatures attack with disadvantage using a larger weapon
@@ -145,8 +143,8 @@ class Attack:
         proficient: bool = True,
         quantity: Optional[int] = None,
         size: Size = Size.medium,
-    ) -> Attack:
-        """Initialise an attack from _attacks.csv_.
+    ) -> Weapon:
+        """Initialise an attack from _attacks.csv_ or _weapons.csv_.
 
         If size is larger than medium, increase the number of dice rolled for the damage.
         """
@@ -203,7 +201,7 @@ class Attack:
         return AttackDamage(all_damages, from_crit=crit)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Attack):
+        if not isinstance(other, Weapon):
             return False
 
         # Don't consider weapons different if they have different amounts of ammo left

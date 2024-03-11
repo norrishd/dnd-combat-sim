@@ -3,7 +3,7 @@
 import abc
 import logging
 from typing import Optional
-from dnd_combat_sim.attack import Attack
+from dnd_combat_sim.weapon import Weapon
 from dnd_combat_sim.conditions import TempCondition
 from dnd_combat_sim.creature import Creature
 from dnd_combat_sim.rules import Ability, Condition, Size, Skill
@@ -16,19 +16,19 @@ logger = logging.getLogger(__name__)
 ##############################
 ### Abstract attack traits ###
 ##############################
-class AttackTrait(Trait):
-    """Abstract base class for traits that modify an attack's roll or damage."""
+class WeaponTrait(Trait):
+    """Abstract base class for traits that modify a weapon's roll or damage."""
 
 
-class OnRollAttackAttackTrait(AttackTrait):
-    """Base class for traits that modify an attack roll."""
+class OnRollAttackWeaponTrait(WeaponTrait):
+    """Base class for traits that modify an weapon roll."""
 
     @abc.abstractmethod
     def on_roll_attack(self, attacker: Creature, target: Creature) -> dict[str, bool]:
         """Modify the attack roll, e.g. impose disadvantage on the attack roll."""
 
 
-class OnHitAttackTrait(AttackTrait):
+class OnHitWeaponTrait(WeaponTrait):
     """Base class for traits that do something when an attack hits, e.g. cause a temporary
     condition.
     """
@@ -41,7 +41,7 @@ class OnHitAttackTrait(AttackTrait):
 ##############################
 ### Concrete attack traits ###
 ##############################
-class Adhesive(OnHitAttackTrait):
+class Adhesive(OnHitWeaponTrait):
     """The mimic adheres to anything that touches it. A Huge or smaller creature adhered to the
     mimic is also grappled by it (escape DC 13). Ability checks made to escape this grapple have
     disadvantage.
@@ -62,8 +62,8 @@ class Adhesive(OnHitAttackTrait):
             )
 
 
-class Lance(OnRollAttackAttackTrait):
-    """Standard lance martial weapon."""
+class Lance(OnRollAttackWeaponTrait):
+    """Lance martial weapon. Has disadvantage when attacking within 5ft."""
 
     def on_roll_attack(self, attacker: Creature, target: Creature) -> dict[str, bool]:
         if get_distance(attacker, target) <= 5:
@@ -71,7 +71,7 @@ class Lance(OnRollAttackAttackTrait):
         return {}
 
 
-class Net(OnHitAttackTrait):
+class Net(OnHitWeaponTrait):
     """Standard net martial ranged weapon."""
 
     def on_attack_hit(self, _attacker: Creature, target: Creature) -> Optional[TempCondition]:
@@ -90,7 +90,7 @@ class Net(OnHitAttackTrait):
 ATTACK_TRAITS = {"adhesive": Adhesive, "lance": Lance, "net": Net}
 
 
-def attach_attack_traits(attack: Attack) -> None:
+def attach_weapon_traits(attack: Weapon) -> None:
     """Helper function to instantiated and attach traits to attacks.
 
     To avoid circular import of traits.py <-> attacks.py, must attach outside of attacks.py.

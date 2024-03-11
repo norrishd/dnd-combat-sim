@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 import random
-from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Collection, List, Optional, Sequence, Union
 
-from dnd_combat_sim.attack import Attack, AttackDamage, AttackRoll, DamageType
+from dnd_combat_sim.weapon import Weapon, AttackDamage, AttackRoll, DamageType
 from dnd_combat_sim.dice import roll, roll_d20
 from dnd_combat_sim.rules import (
     Ability,
@@ -55,7 +54,7 @@ class Creature:
         abilities: Union[Abilities, list[int]] = Abilities(10, 10, 10, 10, 10, 10),
         actions: Optional[Sequence[str]] = None,  # Optional non-attack actions, e.g. teleport
         attack_bonus: Optional[int] = None,  # Overrides proficiency + mods if provided
-        attacks: Sequence[Union[Attack, str]] = None,
+        attacks: Sequence[Union[Weapon, str]] = None,
         cond_immunities: Optional[Collection[Condition]] = None,
         cr: Optional[float] = None,
         creature_subtype: Optional[str] = None,  # No mechanical meaning?
@@ -156,11 +155,11 @@ class Creature:
         self.attack_bonus = attack_bonus
         if attacks is not None:
             self.attacks = [
-                Attack.init(attack, size=self.size) if isinstance(attack, str) else attack
+                Weapon.init(attack, size=self.size) if isinstance(attack, str) else attack
                 for attack in attacks
             ]
         if creature_type == CreatureType.humanoid:
-            self.attacks.append(Attack.init("unarmed_strike"))
+            self.attacks.append(Weapon.init("unarmed_strike"))
         self.cond_immunities = cond_immunities or set()
         self.creature_subtype = creature_subtype
         self.creature_type = creature_type
@@ -201,7 +200,7 @@ class Creature:
         # Combat stuff
         self.remaining_movement: int = speed
         self.attack_used: bool = False
-        self.attacks_used_this_turn: set[Attack] = set()
+        self.weapons_used_this_turn: set[Weapon] = set()
         self.bonus_action_used: bool = False
         self.reaction_used: bool = False
         self.conditions: set[Condition] = set()
@@ -221,7 +220,7 @@ class Creature:
         size = Size[stats["size"]]
         stats["size"] = size
         stats["attacks"] = [
-            Attack.init(attack, size=size) for attack in (stats["attacks"] or "").split(",")
+            Weapon.init(attack, size=size) for attack in (stats["attacks"] or "").split(",")
         ]
         stats["creature_type"] = CreatureType[stats["creature_type"]]
         stats["make_death_saves"] = make_death_saves
@@ -252,7 +251,7 @@ class Creature:
 
         return action, bonus_action
 
-    def choose_attack(self, _targets: list[Creature]) -> Attack:
+    def choose_weapon(self, _targets: list[Creature]) -> Weapon:
         """Choose an attack to use against a target.
 
         For now, simpply choose the attack with the highest expected damage, not factoring in
@@ -264,7 +263,7 @@ class Creature:
         two_handed = available_hands >= 2
         for attack in self.attacks:
             if attack.quantity < 1 or (
-                self.different_attacks and attack.name in self.attacks_used_this_turn
+                self.different_attacks and attack.name in self.weapons_used_this_turn
             ):
                 continue
 
@@ -275,25 +274,9 @@ class Creature:
 
         return random.choices(attack_options, weights=expected_damages)[0]
 
-    def roll_grapple(
-        self, target: Creature, advantage: bool = False, disadvantage: bool = False
-    ) -> bool:
-        """Attempt to grapple a target."""
-        check = self.roll_check(Skill.athletics, advantage=advantage, disadvantage=disadvantage)
-        contested_by = target.roll_check([Skill.acrobatics, Skill.athletics])
-
-        return check > contested_by
-
-    def heal(self, amount: int, wake_up: bool = True) -> None:
-        """Recover hit points."""
-        self.hp = min(self.hp + amount, self.max_hp)
-        self.conditions.discard(Condition.dead)
-        self.conditions.discard(Condition.dying)
-        if wake_up:
-            self.conditions.discard(Condition.unconscious)
-
-    def modify_damage(self, attack_damage: AttackDamage) -> AttackDamage:
-        """Modify the damage dealt by an attack."""
+    def get_damage_taken(self, attack_damage: AttackDamage) -> AttackDamage:
+        """Apply immunities, resistances and vulnerabilities to update attack damage."""
+        attack_damage = deepcopy(attack_damage)
         for dtype in attack_damage.damages:
             if dtype in self.immunities:
                 attack_damage.damages.pop(dtype)
@@ -304,21 +287,29 @@ class Creature:
 
         return attack_damage
 
-    def roll_attack(
-        self, attack: Attack, advantage: bool = False, disadvantage: bool = False
-    ) -> AttackRoll:
-        """Make an attack roll.
+    def heal(self, amount: int, wake_up: bool = True) -> None:
+        """Recover hit points."""
+        self.hp = min(self.hp + amount, self.max_hp)
+        self.conditions.discard(Condition.dead)
+        self.conditions.discard(Condition.dying)
+        if wake_up:
+            self.conditions.discard(Condition.unconscious)
 
-        Return a tuple of (attack total, d20 roll, modifiers, whether is a crit)
-        """
+    def roll_attack(
+        self,
+        weapon: Weapon,
+        advantage: bool = False,
+        disadvantage: bool = False,
+    ) -> AttackRoll:
+        """Make an attack roll, returning an AttackRoll describing it."""
         self.attack_used = True
-        self.attacks_used_this_turn.add(attack.name)
+        self.weapons_used_this_turn.add(weapon.name)
         # If firing a projectile or throwing the weapon, decrease the count
-        if not attack.melee:  # TODO or attack.melee and throwing
-            attack.quantity -= 1
-            if attack.quantity == 0:
-                span = "ammo for" if attack.ammunition else ""
-                logger.debug(f"{self.name} using up last {span} {attack.name}!")
+        if not weapon.melee:  # TODO or attack.melee and throwing
+            weapon.quantity -= 1
+            if weapon.quantity == 0:
+                span = "ammo for" if weapon.ammunition else ""
+                logger.debug(f"{self.name} using up last {span} {weapon.name}!")
 
         # Roll to attack
         rolled = roll_d20(advantage=advantage, disadvantage=disadvantage)
@@ -326,10 +317,10 @@ class Creature:
         if self.attack_bonus is not None:
             modifier = self.attack_bonus
         else:
-            modifier = self._get_attack_modifier(attack)
-            modifier += self.proficiency if attack.proficient else 0
+            modifier = self._get_attack_modifier(weapon)
+            modifier += self.proficiency if weapon.proficient else 0
 
-        return AttackRoll(rolled, modifier, self._is_crit(rolled))
+        return AttackRoll(rolled, modifier, self._is_crit(rolled), weapon)
 
     def roll_check(
         self,
@@ -346,7 +337,7 @@ class Creature:
 
         return rolled + modifier
 
-    def roll_damage(self, attack: Attack, crit: bool = False) -> AttackDamage:
+    def roll_damage(self, attack: Weapon, crit: bool = False) -> AttackDamage:
         """Roll damage for an attack that has hit."""
         # Use two-handed damage if have a spare hand
         damage_modifier = self._get_attack_modifier(attack)
@@ -376,6 +367,7 @@ class Creature:
             self.death_saves["successes"] += 1
             if self.death_saves["successes"] == 3:
                 result = "stabilised"
+                self.conditions.add(Condition.stable)
                 self._reset_death_saves()
         elif death_save == 20:
             result = "critical success"
@@ -426,7 +418,7 @@ class Creature:
         """Indicate the start of a new turn, reset transient state."""
         self.remaining_movement = self.speed
         self.attack_used = False
-        self.attacks_used_this_turn = set()
+        self.weapons_used_this_turn = set()
         self.bonus_action_used = False
         self.reaction_used = False
 
@@ -492,7 +484,7 @@ class Creature:
 
         return DamageOutcome.dead
 
-    def _get_attack_modifier(self, attack: Attack) -> int:
+    def _get_attack_modifier(self, attack: Weapon) -> int:
         """Get an attack modifier:
 
         - strength for melee attacks

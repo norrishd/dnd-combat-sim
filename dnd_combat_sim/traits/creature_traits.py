@@ -34,9 +34,6 @@ turns.
 Pack Tactics (kobold). The kobold has advantage on an attack roll against a creature if at least one
 of the kobold's allies is within 5 feet of the creature and the ally isn't incapacitated.
 
-Rampage (gnoll) - When reduces a creature to 0 hit points with a melee attack on its turn, can take
-a bonus action to move up to half its speed and make a bite attack.
-
 Shapechanger. The mimic can use its action to polymorph into an object or back into its true,
 amorphous form. Its statistics are the same in each form. Any equipment it is wearing or carrying
 isn't transformed. It reverts to its true form if it dies.
@@ -54,7 +51,7 @@ import abc
 import logging
 from typing import Any, Optional
 
-from dnd_combat_sim.attack import AttackDamage
+from dnd_combat_sim.weapon import AttackDamage
 from dnd_combat_sim.battle import Battle
 from dnd_combat_sim.creature import Creature
 from dnd_combat_sim.dice import roll
@@ -83,7 +80,7 @@ class OnDealDamageTrait(Trait):
         pass
 
 
-class OnRollAttackTrait(Trait):
+class OnRollAttackCreatureTrait(Trait):
     """ABC for traits that modify an attack roll."""
 
     @abc.abstractmethod
@@ -115,13 +112,13 @@ class OnTakeDamageTrait(Trait):
 
 
 ### Modify attack rolls ###
-class Grappler(OnRollAttackTrait):
+class Grappler(OnRollAttackCreatureTrait):
     """The mimic has advantage on attack rolls against any creature grappled by it."""
 
     def on_roll_attack(
         self, creature: Creature, target: Creature, battle: Battle
     ) -> dict[str, Any]:
-        if Condition.grappled in battle.temp_conditions[creature]:
+        if battle.has_condition(target, Condition.grappled):
             logger.debug(
                 f"{creature.name} has advantage on attack roll against grappled {target.name}."
             )
@@ -129,7 +126,7 @@ class Grappler(OnRollAttackTrait):
         return {}
 
 
-class PackTactics(OnRollAttackTrait):
+class PackTactics(OnRollAttackCreatureTrait):
     """Gets advantage on attack roll if a non-incapacitated ally is within 5 ft of target."""
 
     def on_roll_attack(

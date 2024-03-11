@@ -17,4 +17,4 @@ if __name__ == "__main__":
     creature2 = Creature.init(args.creature2, make_death_saves=args.death_saves)
 
     encounter = MultiEncounter1v1(creature1, creature2, num_runs=args.num_runs)
-    encounter.run(to_the_death=True)
+    encounter.run()

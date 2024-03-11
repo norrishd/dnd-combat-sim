@@ -1,9 +1,9 @@
 # pylint: disable=protected-access
 import random
 
-from dnd_combat_sim.attack import Attack
+from dnd_combat_sim.weapon import Weapon
 from dnd_combat_sim.creature import Abilities, Creature
-from dnd_combat_sim.rules import Ability, Size
+from dnd_combat_sim.rules import Size
 from dnd_combat_sim.utils import MONSTERS
 
 
@@ -36,8 +36,8 @@ class TestCreature:
         assert creature.abilities == Abilities(10, 11, 12, 13, 14, 16)
         assert creature.proficiency == max(cr - 1, 0) // 4 + 2
         assert creature.attacks == [
-            Attack.init("scimitar", size=size),
-            Attack.init("shortbow", size=size),
+            Weapon.init("scimitar", size=size),
+            Weapon.init("shortbow", size=size),
         ]
 
     def test_init_from_template(self):

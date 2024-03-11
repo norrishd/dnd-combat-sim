@@ -1,7 +1,5 @@
 import logging
 from pathlib import Path
-import time
-from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -75,12 +73,6 @@ def load_monsters(*args, **kwargs) -> pd.DataFrame:
     monsters = monsters.fillna(np.nan).replace([np.nan], [None])
 
     return monsters
-
-
-def log_and_pause(message: str, level: Union[int, str] = logging.INFO, sleep_time: float = 0.0):
-    # print(message)
-    logger.log(level, message)
-    time.sleep(sleep_time)
 
 
 ATTACKS = load_attacks()

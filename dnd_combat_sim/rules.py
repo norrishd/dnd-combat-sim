@@ -35,7 +35,7 @@ class Condition(StrEnum):
         attacks against the creature have advantage.
 
     - Incapacitated: Can't take actions, bonus actions or reactions (can move and speak).
-    - Stunned: Everything from Incpacitated, plus:
+    - Stunned: Everything from Incapacitated, plus:
         - Can't move, and can only speak falteringly
         - Attack rolls against the creature have advantage
         - Automatically fail strength and dexterity saving throws
@@ -57,6 +57,7 @@ class Condition(StrEnum):
     deafened = auto()
     frightened = auto()  # disadv on ability checks and attack rolls while source of fear is visible
     grappled = auto()
+    hidden = auto()  # Not an official condition, but useful to track
     incapacitated = auto()  # Can't take actions, bonus action or reaction
     invisible = auto()
     paralyzed = auto()  # Also incapacitated, can't move or speak, and attacks within 5 ft auto-crit
@@ -64,8 +65,10 @@ class Condition(StrEnum):
     poisoned = auto()
     prone = auto()
     restrained = auto()
+    stable = auto()
     stunned = auto()  # Also incapacitated, can't move & speak only falteringly
     unconscious = auto()  # Also incapacitated, prone, & can't move or speak
+    unseen = auto()
     # Not official conditions but useful to track
     dying = auto()
     dead = auto()

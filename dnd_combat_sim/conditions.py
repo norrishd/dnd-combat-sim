@@ -1,3 +1,5 @@
+"""Module to represent temporary conditions on creatures, e.g. being grappled."""
+
 from __future__ import annotations
 
 import abc
@@ -10,7 +12,7 @@ from dnd_combat_sim.rules import Ability, Condition, Skill
 from dnd_combat_sim.utils import get_distance
 
 
-@dataclass
+@dataclass(eq=False)
 class TempCondition(abc.ABC):
     """Class to represent a temporary condition on a creature.
 
@@ -53,6 +55,16 @@ class TempCondition(abc.ABC):
                     return True
 
         return False
+
+    def __eq__(self, other: object) -> bool:
+        """Check if two TempConditions are equal."""
+        if not isinstance(other, TempCondition):
+            return False
+        return (
+            self.condition == other.condition
+            and self.target == other.target
+            and self.caused_by == other.caused_by
+        )
 
 
 class Grappled(TempCondition):
@@ -125,10 +137,10 @@ class Grappling(TempCondition):
 
     def check_if_condition_ended(self):
         """Check whether the condition has ended for any reason."""
-        if any(condition in self.caused_by.conditions for condition in self.end_on_conditions):
+        if get_distance(self.target, self.caused_by) > 5:
             return True
 
-        return get_distance(self.creature, self.caused_by) > 5
+        return super().check_if_condition_ended()
 
 
 class PsuedopodGrappled(TempCondition):
