@@ -12,7 +12,7 @@ from dnd_combat_sim.rules import Ability, Condition, Skill
 from dnd_combat_sim.utils import get_distance
 
 
-@dataclass(eq=False)
+@dataclass(eq=False, repr=False)
 class TempCondition(abc.ABC):
     """Class to represent a temporary condition on a creature.
 
@@ -65,6 +65,13 @@ class TempCondition(abc.ABC):
             and self.target == other.target
             and self.caused_by == other.caused_by
         )
+
+    def __repr__(self) -> str:
+        ret = f"Condition({self.target.name} {self.condition.name}"
+        if self.caused_by:
+            ret += f" by {self.caused_by.name}"
+        ret += ")"
+        return ret
 
 
 class Grappled(TempCondition):
