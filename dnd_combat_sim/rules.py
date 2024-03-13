@@ -1,9 +1,8 @@
 """Concepts and rules for the game."""
+# pylint: disable=invalid-name
 
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum, auto
-
-# pylint: disable=invalid-name
 
 
 class Condition(StrEnum):
@@ -78,11 +77,11 @@ class DamageOutcome(StrEnum):
     """Possible outcomes from taking damage."""
 
     alive = auto()
-    knocked_out = auto()
-    still_dying = auto()  # If hit a creature already making death saving throws
     dead = auto()  # For 3 failed death saving throws or basic monsters
     instant_death = auto()  # For massive damage or certain spells
+    knocked_out = auto()
     reanimated = auto()  # E.g. undead fortitude trait
+    still_dying = auto()  # If hit a creature already making death saving throws
 
 
 class DamageType(StrEnum):

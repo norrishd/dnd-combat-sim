@@ -451,18 +451,17 @@ class Creature:
         if self.hp > 0:
             return DamageOutcome.alive
 
-        if Condition.dying not in self.conditions:
-            if self.make_death_saves:
-                self.conditions.update([Condition.unconscious, Condition.dying])
-                return DamageOutcome.knocked_out
-            else:
-                return self._die()
-        else:
+        if Condition.dying in self.conditions:
             # Already making death saving throws, get failure(s) instead of damage
             self.death_saves["failures"] += 1 if not crit else 2
             if self.death_saves["failures"] >= 3:
                 return self._die()
             return DamageOutcome.still_dying
+
+        if self.make_death_saves:
+            self.conditions.update([Condition.unconscious, Condition.dying])
+            return DamageOutcome.knocked_out
+        return self._die()
 
     # Private methods
     def _check_if_can_grapple(self, target: Creature) -> bool:
@@ -481,6 +480,7 @@ class Creature:
         self.conditions.add(Condition.dead)
         self.conditions.discard(Condition.dying)
         self.conditions.discard(Condition.unconscious)
+        # logger.info(f"{self.name} died")
 
         return DamageOutcome.dead
 
