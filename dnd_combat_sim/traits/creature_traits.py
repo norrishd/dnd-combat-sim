@@ -92,7 +92,10 @@ class OnRollDamageTrait(Trait):
     """ABC for traits that modify a damage roll."""
 
     @abc.abstractmethod
-    def on_roll_damage(self, creature: Creature, damage_roll: AttackDamage, battle: Battle):
+    def on_roll_damage(
+        self, creature: Creature, damage_roll: AttackDamage, battle: Battle
+    ) -> tuple[AttackDamage, bool]:
+        """Return the (potentially modified) damage roll, and whether the trait was applied."""
         pass
 
 
@@ -119,9 +122,6 @@ class Grappler(OnRollAttackCreatureTrait):
         self, creature: Creature, target: Creature, battle: Battle
     ) -> dict[str, Any]:
         if battle.has_condition(target, Condition.grappled):
-            logger.debug(
-                f"{creature.name} has advantage on attack roll against grappled {target.name}."
-            )
             return {"advantage": True}
         return {}
 
@@ -152,9 +152,11 @@ class MartialAdvantage(OnRollDamageTrait):
 
     def on_roll_damage(
         self, creature: Creature, damage_roll: AttackDamage, battle: Battle
-    ) -> AttackDamage:
+    ) -> tuple[AttackDamage, bool]:
+        """Roll an extra 2d6 damage if martial advantage hasn't been used this round."""
+        applied = False
         if self.last_used == battle.round:
-            return damage_roll
+            return damage_roll, applied
 
         allies = battle.get_allies(creature)
         for ally in allies:
@@ -167,9 +169,10 @@ class MartialAdvantage(OnRollDamageTrait):
                 )
                 damage_roll.damages[damage_type] += extra_damage
                 self.last_used = battle.round
+                applied = True
                 break
 
-        return damage_roll
+        return damage_roll, applied
 
 
 ### Mutate creature state after doing damage ###
@@ -207,7 +210,7 @@ class UndeadFortitude(OnTakeDamageTrait):
         if damage_result not in {DamageOutcome.knocked_out, DamageOutcome.dead}:
             return damage_result
 
-        if damage.from_crit:
+        if damage.crit:
             logger.debug("Undead fortitude overcome by crit")
             return damage_result
         if DamageType.radiant in damage.damages:

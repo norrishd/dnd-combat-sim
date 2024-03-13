@@ -17,6 +17,13 @@ MONSTERS_PATH = Path(__file__).parent / "content/monsters.csv"
 WEAPONS_PATH = Path(__file__).parent / "content/weapons.csv"
 
 
+def cr_to_float(cr: str) -> float:
+    if "/" in cr:
+        num, denom = cr.split("/")
+        return int(num) / int(denom)
+    return float(cr)
+
+
 def get_distance(point1: Point, point2: Point) -> float:
     """Calculate the distance between two points."""
     return ((point1.x - point2.x) ** 2 + (point1.y - point2.y) ** 2) ** 0.5

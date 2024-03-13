@@ -1,8 +1,10 @@
+import logging
 from collections import defaultdict
-from dnd_combat_sim import conditions
 from dnd_combat_sim.conditions import TempCondition
 from dnd_combat_sim.creature import Creature
 from dnd_combat_sim.rules import Condition
+
+logger = logging.getLogger(__name__)
 
 
 class Team:
@@ -29,7 +31,9 @@ class Battle:
                 temp_condition.condition == condition.condition
                 and temp_condition.caused_by == condition.caused_by
             ):
-                raise ValueError(f"Trying to add a condition twice: {condition}")
+                logger.debug(f"Condition already active: {condition}")
+                return
+
         self.temp_conditions[condition.target].append(condition)
 
     def get_allies(self, creature: Creature) -> set[Creature]:

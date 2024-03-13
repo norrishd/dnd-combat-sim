@@ -62,11 +62,9 @@ class AttackDamage:
     damage types.
     """
 
-    def __init__(
-        self, damages_rolled: list[tuple[int, DamageType]], from_crit: bool = False
-    ) -> None:
+    def __init__(self, damages_rolled: list[tuple[int, DamageType]], crit: bool = False) -> None:
         self.damages: dict[DamageType, int] = defaultdict(int)
-        self.from_crit = from_crit
+        self.crit = crit
         for damage_rolled in damages_rolled:
             self.damages[damage_rolled[1]] += damage_rolled[0]
 
@@ -198,7 +196,7 @@ class Weapon:
             damage_rolled = roll(self.bonus_damage.dice, crit=crit, use_average=use_average)
             all_damages.append((damage_rolled, self.bonus_damage.damage_type))
 
-        return AttackDamage(all_damages, from_crit=crit)
+        return AttackDamage(all_damages, crit=crit)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Weapon):

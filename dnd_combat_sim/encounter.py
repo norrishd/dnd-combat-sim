@@ -1,10 +1,8 @@
 import logging
 from typing import Optional
 
-from dnd_combat_sim.weapon import Weapon, AttackDamage, AttackRoll
 from dnd_combat_sim.battle import Battle, Team
 from dnd_combat_sim.conditions import TempCondition
-
 from dnd_combat_sim.creature import Condition, Creature
 from dnd_combat_sim.log import EncounterLogger
 from dnd_combat_sim.rules import DamageOutcome
@@ -20,6 +18,7 @@ from dnd_combat_sim.traits.creature_traits import (
     attach_traits,
 )
 from dnd_combat_sim.utils import get_distance
+from dnd_combat_sim.weapon import Weapon, AttackDamage, AttackRoll
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,24 @@ class Encounter1v1:
             for attack in creature.attacks:
                 attach_weapon_traits(attack)
 
+    def run_encounter(self, max_rounds: int = 10) -> Optional[Creature]:
+        """Run an encounter between two creatures to the death, returning the winner."""
+        self.battle.round = 1
         self.initiative = self.roll_initiative()
+
+        # Fight is on!
+        while not any(Condition.dead in creature.conditions for creature in self.creatures):
+            self.logger.log_start_round(self.battle.round)
+            for creature in self.initiative:
+                fight_won = self.take_turn(creature)
+                if fight_won:
+                    return creature
+
+            self.logger.log_end_round(self.creatures)
+            self.battle.round += 1
+            if self.battle.round > max_rounds:
+                logger.info("Battle is a stalemate!")
+                return None
 
     def roll_initiative(self):
         """Roll initiative to determine combat order.
@@ -50,8 +66,8 @@ class Encounter1v1:
 
         return initiative
 
-    def take_turn(self, creature: Creature) -> None:
-        """Take a turn for a creature."""
+    def take_turn(self, creature: Creature) -> bool:
+        """Take a turn for a creature, returning a bool indicating whether it won the fight."""
         enemy = self.creatures[1] if creature == self.creatures[0] else self.creatures[0]
 
         # Reset counters, roll a death save if at 0 HP and dying
@@ -73,18 +89,19 @@ class Encounter1v1:
             return None
 
         # Choose what to do
-        action, bonus_action = creature.choose_action()
+        action, _bonus_action = creature.choose_action()
 
         # Make an attack
         if action == "attack":
-            self.attack(creature, enemy)
-            if Condition.dead in enemy.conditions or Condition.dying in enemy.conditions:
-                # Enemy defeated; encounter over!
-                return creature
+            damage_outcome = self.attack(creature, enemy)
+            if Condition.dead in enemy.conditions:
+                return True
+            return damage_outcome
         else:
             self.logger.log_choose_action(creature, action)
+        return False
 
-    def attack(self, attacker: Creature, target: Creature) -> None:
+    def attack(self, attacker: Creature, target: Creature):
         """Resolve an attack from attacker to a target."""
         for _ in range(attacker.num_attacks):
             # 1. Attacker chooses which attack to use
@@ -103,43 +120,42 @@ class Encounter1v1:
 
             # 4. Calculate damage including attacker damage modifying traits, e.g. Martial advantage
             attack_damage = attacker.roll_damage(weapon, crit=attack_roll.is_crit or auto_crit)
-            modified_damage = self._apply_damage_modifiers(attacker, attack_damage)
+            # So far: Martial advantage
+            modified_damage, attack_traits_applied = self._apply_damage_modifiers(
+                attacker, attack_damage
+            )
 
             # 5. Update damage from target resistance / vulnerability / immunity
             damage_taken = target.get_damage_taken(modified_damage)
 
             # 6. Actually do the damage, then resolve traits like undead fortitude
-            damage_result = target.take_damage(damage_taken, crit=attack_roll.is_crit)
-            damage_result = self._apply_post_damage_traits(target, attack_damage, damage_result)
-            self.logger.log_hit(
-                attacker, target, attack_roll, attack_damage, modified_damage, damage_taken
-            )
+            if damage_taken.total > 0:
+                damage_outcome = target.take_damage(damage_taken, crit=attack_roll.is_crit)
+                # So far: Undead fortitude
+                damage_outcome = self._apply_post_damage_traits(
+                    target, attack_damage, damage_outcome
+                )
+                self.logger.log_hit(
+                    attacker,
+                    target,
+                    attack_roll,
+                    attack_damage,
+                    modified_damage,
+                    attack_traits_applied,
+                    damage_taken,
+                    damage_outcome,
+                )
+                if damage_outcome in {DamageOutcome.dead, DamageOutcome.instant_death}:
+                    return
 
             # Apply weapon traits which may deal extra damage or cause conditions
+            # TODO are there any weapon effects that should be applied even if target is KOed/killed
+            # by the damage?
             conditions = self._apply_weapon_hit_traits(weapon, attacker, target)
             for condition in conditions:
                 self.battle.add_condition(condition)
+
             self.logger.log_weapon_effects(conditions)
-
-            self.logger.log_attack_outcome(damage_result, target)
-            if damage_result in {DamageOutcome.dead, DamageOutcome.instant_death}:
-                return
-
-    def run(self, max_rounds: int = 10) -> Optional[Creature]:
-        """Run an encounter between two creatures to the death, returning the winner."""
-        self.battle.round = 1
-        if self.battle.round > max_rounds:
-            logger.debug("Battle is a stalemate!")
-            return None
-
-        # Fight is on!
-        while not any(Condition.dead in creature.conditions for creature in self.creatures):
-            self.logger.log_start_round(self.battle.round)
-            for creature in self.initiative:
-                self.take_turn(creature)
-
-            self.logger.log_end_round(self.creatures)
-            self.battle.round += 1  # Compare with target's AC
 
     def _check_if_hits(self, target: Creature, attack_roll: AttackRoll):
         """Resolve an attack from attacker to a target."""
@@ -239,15 +255,18 @@ class Encounter1v1:
     def _apply_damage_modifiers(
         self, attacker: Creature, attack_damage: AttackDamage
     ) -> AttackDamage:
-        """Apply any attacker creature traits that modify damage dealt, e.g. Martial Advantage."""
+        """Apply any attacker traits that modify the AttackDamage, e.g. Martial Advantage."""
+        traits_applied = []
         for trait in attacker.traits:
             if isinstance(trait, OnRollDamageTrait):
-                attack_damage = trait.on_roll_damage(
+                attack_damage, applied = trait.on_roll_damage(
                     attacker,
                     damage_roll=attack_damage,
                     battle=self.battle,
                 )
-        return attack_damage
+            if applied:
+                traits_applied.append(trait)
+        return attack_damage, traits_applied
 
     def _apply_post_damage_traits(
         self, target: Creature, attack_damage: AttackDamage, damage_result: DamageOutcome
@@ -287,17 +306,22 @@ class MultiEncounter1v1:
     def run(self):
         """Run an encounter between two creatures to the death."""
         if 3 < self.num_runs <= 10:
-            logging.getLogger().setLevel(logging.INFO)
+            logging.getLogger().setLevel(25)
         elif self.num_runs > 10:
             logging.getLogger().setLevel(logging.WARNING)
 
         for i in range(self.num_runs):
             encounter = Encounter1v1(self.creatures[0].spawn(), self.creatures[1].spawn())
             encounter.logger.log_encounter(i)
-            winner = encounter.run()
+            winner = encounter.run_encounter()
             if winner is not None:
                 self.wins[winner.name] += 1
                 encounter.logger.log_winner(winner)
+            else:
+                if "Stalemate" not in self.wins:
+                    self.wins["Stalemate"] = 1
+                else:
+                    self.wins["Stalemate"] += 1
 
         if self.num_runs > 1:
             print("\n")
