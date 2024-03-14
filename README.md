@@ -2,7 +2,7 @@
 
 A combat simulator for the world's greatest roleplaying game: Dungeons & Dragons 5e.
 
-Ever wanted to see who would win in a 5 skeletons vs 1 ogre fight? Now you can
+Ever wanted to see who would win in a 5 skeletons vs 1 ogre fight? Now you can!
 
 ## Setup
 
@@ -12,51 +12,73 @@ Ever wanted to see who would win in a 5 skeletons vs 1 ogre fight? Now you can
 
 ## Usage
 
-    poetry run python run_combat.py {MONSTER1] [MONSTER2] [-n NUM_ENCOUNTERS]
+    poetry shell  # Activate virtual environment
+    python run_combat.py {MONSTER1] [MONSTER2] [-n NUM_ENCOUNTERS]
 
 E.g. to see a skeleton go at it with a zombie:
 
-    poetry run python run_combat.py skeleton zombie
+    python run_combat.py skeleton zombie
+
+To run 100 simulations of an orge fighting a mimic and tally victories:
+
+    python run_combat.py ogre mimic -n 100
+
+To list available monsters:
+
+    python run_combat --monsters
 
 ## Implemented
 
-- combat / creatures
-  - [x] rolling init
-  - [x] dealing and receiving melee damage
-  - [x] critical hits
-  - [x] instant death for damage exceeding max HP
-  - [x] two-handed weapons
-  - [x] death saving throws
-  - [x] auto-failure for damage while down
-  - [x] multiple attacks per turn
-  - [x] ammunition
-  - [x] damage resistances and vulnerabilities
-  - [x] traits (e.g. undead fortitude)
-  - [x] weapon/attack traits (e.g. mimic pseudopod)
-- agent logic
-  - [x] choose best attack(s) using expected value, assuming a hit
-- simulation
-  - [x] 1v1 combat for two melee creatures whaling on each other
-  - [x] run many simulations to get stats
-- content
-  - [x] all simple & martial weapons
-  - [x] a dozen sample monsters
-- traits
-  - creature traits
-    - Grappler
-    - Martial advantage
-    - Pack tactics
-    - Undead fortitude
-  - attack traits
-    - Adhesive
+### Agent logic
+  - [x] choosing best attack(s) weighted by expected damage value, assuming a hit
+
+#### Combat / creatures
+- [x] dealing and receiving melee damage
+- [x] instant death for damage exceeding max HP
+- [x] death saving throws
+- [x] auto-failure for damage while down
+- [x] critical hits
+- [x] multiple attacks per turn
+- [x] damage resistance, vulnerability and immunity
+- [x] traits (e.g. undead fortitude)
+- [x] weapon/attack traits (e.g. mimic pseudopod)
+- [x] temporary effects:
+  - Grappled
+- [x] advantage/disadvantage from temporary effects
+
+### Content
+- [x] 20 sample monsters
+- [x] all simple & martial weapons
+- [x] natural attacks from all implemented monsters
+
+### Simulation
+- [x] rolling initiative
+- [x] 1v1 combat for two melee creatures whaling on each other
+- [x] run many simulations to get stats
+
+### Traits
+- Creature traits
+  - [x] Grappler
+  - [x] Martial advantage
+  - [x] Pack tactics
+  - [x] Undead fortitude
+- Weapon traits
+  - [x] Adhesive
+
+### Weapons
+- [x] two-handed damage & logic to use one or two handed
+- [x] ammunition
+- [x] special weapon traits, e.g. lance, net, pseudopod
+- [ ] throwing weapons
+
 
 ## TODOs
 
-- 1D movement
+- basic 1D movement
 - Rampage: temporary new bonus action option
 - thrown weapons
 - attacking
-  - advantage, disadvantage
+  - saving throw attacks
   - spells
   - AOE attacks
 - agent logic
@@ -65,14 +87,11 @@ E.g. to see a skeleton go at it with a zombie:
   - creature memory (e.g. keep attacking same enemy round to round)
   - tactical movement
 - combat mechanics
-  - 1D movement
   - factor in distance for ranged weapons
   - bonus actions
   - 2D movement
-  - conditions
   - non-attack actions
   - skill checks
-  - saving throws
 - visualisation
 
 ## Showdown

@@ -35,7 +35,7 @@ class TestCreature:
         assert creature.hp == creature.max_hp
         assert creature.abilities == Abilities(10, 11, 12, 13, 14, 16)
         assert creature.proficiency == max(cr - 1, 0) // 4 + 2
-        assert creature.attacks == [
+        assert creature.weapons == [
             Weapon.init("scimitar", size=size),
             Weapon.init("shortbow", size=size),
         ]
@@ -48,4 +48,15 @@ class TestCreature:
         creature = Creature.init(name)
         assert creature.name == name.title()
         assert 2 <= creature.proficiency <= 9
-        assert len(creature.attacks) > 0
+        assert len(creature.weapons) > 0
+
+    def test_choose_weapon(self):
+        """Test cases:
+
+        - Creature in melee, only has melee weapon
+        - Creature in melee, only had ranged
+        - Creature in melee, has good melee and worse ranged
+        - Creature in melee, has poor melee and better ranged (even with disadvantage)
+
+
+        """

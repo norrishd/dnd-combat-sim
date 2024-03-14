@@ -1,7 +1,7 @@
 """Concepts and rules for the game."""
 # pylint: disable=invalid-name
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum, auto
 
 
@@ -102,13 +102,16 @@ class DamageType(StrEnum):
     thunder = auto()
 
 
-@dataclass
+@dataclass(repr=False)
 class Point:
     """Class to represent a point on a grid."""
 
     x: int
     y: int
     z: int = 0
+
+    def __repr__(self) -> str:
+        return f"({self.x}, {self.y})"
 
 
 class Size(IntEnum):

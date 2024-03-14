@@ -33,7 +33,7 @@ class Encounter1v1:
         self.creatures = [creature1, creature2]
         for creature in self.creatures:
             attach_traits(creature)
-            for attack in creature.attacks:
+            for attack in creature.weapons:
                 attach_weapon_traits(attack)
 
     def run_encounter(self, max_rounds: int = 10) -> Optional[Creature]:
@@ -89,7 +89,7 @@ class Encounter1v1:
             return None
 
         # Choose what to do
-        action, _bonus_action = creature.choose_action()
+        action, _bonus_action = creature.choose_action([enemy])
 
         # Make an attack
         if action == "attack":
@@ -97,6 +97,9 @@ class Encounter1v1:
             if Condition.dead in enemy.conditions:
                 return True
             return damage_outcome
+        elif action == "dash":
+            new_position = creature.choose_movement([enemy])
+            creature.move(new_position)
         else:
             self.logger.log_choose_action(creature, action)
         return False
@@ -104,23 +107,29 @@ class Encounter1v1:
     def attack(self, attacker: Creature, target: Creature):
         """Resolve an attack from attacker to a target."""
         for _ in range(attacker.num_attacks):
-            # 1. Attacker chooses which attack to use
-            weapon = attacker.choose_weapon([target])
+            # 1. Optionally move to a new position
+            new_position = attacker.choose_movement([target])
+            if new_position is not None:
+                # TODO handle opportunity attacks
+                # for target in targets: if not target.reaction_used_this_turn: ...
+                attacker.move(new_position)
 
-            # 2. Calculate any modifiers for the attack
+            # 1. Choose who to attack, with which weapon, and optionally where to move first
+            target, weapon, thrown = attacker.choose_attack([target])
+
+            # 3. Calculate any attack modifiers then roll the attack
             # Attack modifiers from a) creature traits, b) weapon traits, c_ temporary conditions
             attack_modifiers, auto_crit = self._get_attack_modifiers(weapon, attacker, target)
-            # 3. Roll the attack
-            attack_roll = attacker.roll_attack(weapon, **attack_modifiers)
+            attack_roll = attacker.roll_attack(weapon, thrown=thrown, **attack_modifiers)
 
-            # 3. Check if attack hits, for now just considering AC, crits and crit fails
+            # 4. Check if attack hits, for now just considering AC, crits and crit fails
             if not self._check_if_hits(target, attack_roll):
                 self.logger.log_miss(attacker, target, attack_roll)
                 continue
 
-            # 4. Calculate damage including attacker damage modifying traits, e.g. Martial advantage
+            # 5. Calculate damage including attacker damage modifying traits
             attack_damage = attacker.roll_damage(weapon, crit=attack_roll.is_crit or auto_crit)
-            # So far: Martial advantage
+            # Damage modifiers so far: Martial advantage
             modified_damage, attack_traits_applied = self._apply_damage_modifiers(
                 attacker, attack_damage
             )

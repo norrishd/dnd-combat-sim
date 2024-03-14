@@ -22,7 +22,7 @@ def test_grapple():
 
     # This will attach creature and weapon traits
     encounter = Encounter1v1(ogre, mimic)
-    pseudopod = [attack for attack in mimic.attacks if attack.name == "pseudopod"][0]
+    pseudopod = [attack for attack in mimic.weapons if attack.name == "pseudopod"][0]
     adhesive = [trait for trait in pseudopod.traits][0]
     # grappler = [trait for trait in mimic.traits if trait.name == "grappler"][0]
 

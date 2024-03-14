@@ -21,8 +21,8 @@ if __name__ == "__main__":
         print(MONSTERS.reset_index().sort_values(["cr_float", "name"]).set_index("name")["cr"])
         exit()
 
-    creature1 = Creature.init(args.creature1, make_death_saves=args.death_saves)
-    creature2 = Creature.init(args.creature2, make_death_saves=args.death_saves)
+    creature1 = Creature.init(args.creature1, make_death_saves=args.death_saves, start_x=0)
+    creature2 = Creature.init(args.creature2, make_death_saves=args.death_saves, start_x=100)
 
     encounter = MultiEncounter1v1(creature1, creature2, num_runs=args.num_runs)
     encounter.run()
