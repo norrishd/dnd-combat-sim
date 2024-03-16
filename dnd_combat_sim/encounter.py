@@ -98,7 +98,8 @@ class Encounter1v1:
                 return True
             return damage_outcome
         elif action == "dash":
-            new_position = creature.choose_movement([enemy])
+            new_position, distance = creature.choose_movement([enemy])
+            self.logger.log_movement(creature, enemy, new_position, distance, dash=True)
             creature.move(new_position)
         else:
             self.logger.log_choose_action(creature, action)
@@ -107,53 +108,63 @@ class Encounter1v1:
     def attack(self, attacker: Creature, target: Creature):
         """Resolve an attack from attacker to a target."""
         for _ in range(attacker.num_attacks):
+            # TODO handle lizardfolk throwing spear for first attack and not being allowed to
+            # repeat for second attack
+
             # 1. Optionally move to a new position
-            new_position = attacker.choose_movement([target])
+            new_position, distance = attacker.choose_movement([target])
             if new_position is not None:
                 # TODO handle opportunity attacks
                 # for target in targets: if not target.reaction_used_this_turn: ...
+                self.logger.log_movement(attacker, target, new_position, distance)
                 attacker.move(new_position)
 
             # 1. Choose who to attack, with which weapon, and optionally where to move first
-            target, weapon, thrown = attacker.choose_attack([target])
+            attack_plan = attacker.choose_attack([target])
+            if attack_plan is None:
+                logger.info(f"{attacker.name} has no valid attacks left.")
+                break
+            else:
+                target, weapon, thrown = attack_plan
 
             # 3. Calculate any attack modifiers then roll the attack
-            # Attack modifiers from a) creature traits, b) weapon traits, c_ temporary conditions
+            # Attack modifiers from a) creature traits, b) weapon traits, c) temporary conditions
             attack_modifiers, auto_crit = self._get_attack_modifiers(weapon, attacker, target)
             attack_roll = attacker.roll_attack(weapon, thrown=thrown, **attack_modifiers)
+            self.logger.cache_attack(attacker, target, thrown, attack_modifiers, attack_roll)
 
             # 4. Check if attack hits, for now just considering AC, crits and crit fails
             if not self._check_if_hits(target, attack_roll):
-                self.logger.log_miss(attacker, target, attack_roll)
+                self.logger.log_miss(attack_roll)
                 continue
 
             # 5. Calculate damage including attacker damage modifying traits
             attack_damage = attacker.roll_damage(weapon, crit=attack_roll.is_crit or auto_crit)
             # Damage modifiers so far: Martial advantage
-            modified_damage, attack_traits_applied = self._apply_damage_modifiers(
+            attack_damage, attack_traits_applied = self._apply_damage_modifiers(
                 attacker, attack_damage
             )
 
             # 5. Update damage from target resistance / vulnerability / immunity
-            damage_taken = target.get_damage_taken(modified_damage)
+            damage_taken, resistances = target.get_damage_taken(attack_damage)
 
             # 6. Actually do the damage, then resolve traits like undead fortitude
             if damage_taken.total > 0:
                 damage_outcome = target.take_damage(damage_taken, crit=attack_roll.is_crit)
+                self.logger.log_hit(
+                    target,
+                    attack_roll,
+                    attack_damage,
+                    attack_traits_applied,
+                    resistances,
+                    damage_taken,
+                    damage_outcome,
+                )
                 # So far: Undead fortitude
                 damage_outcome = self._apply_post_damage_traits(
                     target, attack_damage, damage_outcome
                 )
-                self.logger.log_hit(
-                    attacker,
-                    target,
-                    attack_roll,
-                    attack_damage,
-                    modified_damage,
-                    attack_traits_applied,
-                    damage_taken,
-                    damage_outcome,
-                )
+                self.logger.log_damage_outcome(target, damage_outcome)
                 if damage_outcome in {DamageOutcome.dead, DamageOutcome.instant_death}:
                     return
 
@@ -180,7 +191,7 @@ class Encounter1v1:
 
     def _get_attack_modifiers(
         self, attack: Weapon, attacker: Creature, target: Creature
-    ) -> tuple[dict[str, bool], bool]:
+    ) -> tuple[dict[str, str], bool]:
         """Get modifiers to an attack role, i.e. advantage or disadvantage, and whether the damage
         roll should be an auto-crit upon hitting.
 
@@ -189,61 +200,82 @@ class Encounter1v1:
         - weapon traits, e.g. Lance has disadvantage when attacking within 5ft
         - temporary conditions on either the attacker or target, e.g. attacking when invisible or
             being prone
+
+        Returns:
+            A tuple of (modifiers, auto_crit: bool)
+            `modifiers` is a dict of modifier to the/a cause.
+            E.g. {"disadvantage": "long_range", "advantage": "attacking_invisible"}
         """
         auto_crit = False
+        # Resolve modifiers from position
+        position_modifiers = {}
+        distance = get_distance(attacker.position, target.position)
+        if distance <= 5:
+            if not attack.melee:
+                position_modifiers["ranged_in_melee"] = "disadvantage"
+        elif attack.range is not None:
+            if attack.range[0] < distance <= attack.range[1]:
+                position_modifiers["long_range"] = "disadvantage"
+            elif distance > attack.range[1]:
+                raise ValueError(f"{attacker.name} is too far from {target.name} to attack")
+
         # Resolve modifiers from attack traits
         weapon_modifiers = {}
         for trait in attack.traits:
             if isinstance(trait, OnRollAttackWeaponTrait):
-                modifier = trait.on_roll_attack(
+                reason, modifier = trait.on_roll_attack(
                     attacker=attacker,
                     target=target,
                 )
                 if modifier:
-                    weapon_modifiers[trait] = modifier
+                    weapon_modifiers[reason] = modifier
         # Resolve modifiers from creature traits
         attacker_modifiers = {}
         for trait in attacker.traits:
             if isinstance(trait, OnRollAttackCreatureTrait):
-                modifier = trait.on_roll_attack(
+                true_or_false = trait.on_roll_attack(
                     attacker,
                     target=target,
                     battle=self.battle,
                 )
-                if modifier:
-                    attacker_modifiers[trait] = modifier
+                if true_or_false:
+                    attacker_modifiers[trait] = true_or_false
         # Resolve modifiers from conditions on the attacker
         attacker_condition_modifiers = {}
         for condition in self.battle.temp_conditions[attacker]:
             if condition.condition in {Condition.invisible, Condition.unseen}:
-                attacker_condition_modifiers[condition] = {"advantage": True}
+                attacker_condition_modifiers["attacking_from_unseen"] = "advantage"
             elif condition.condition in {Condition.prone, Condition.poisoned, Condition.frightened}:
-                attacker_condition_modifiers[condition] = {"disadvantage": True}
+                reason = f"attacking_{condition.condition.name}"
+                attacker_condition_modifiers[reason] = "disadvantage"
             elif condition.condition == Condition.blinded and not attacker.senses:
                 # TODO make this more robust
-                attacker_condition_modifiers[condition] = {"disadvantage": True}
+                attacker_condition_modifiers["attacking_blinded"] = "disadvantage"
         # Resolve modifiers from conditions on the target
         target_condition_modifiers = {}
         for condition in self.battle.temp_conditions[target]:
             if condition.condition in {Condition.invisible, Condition.unseen}:
-                target_condition_modifiers[condition] = {"disadvantage": True}
+                target_condition_modifiers["target_unseen"] = "disadvantage"
             elif condition.condition == Condition.blinded and not target.senses:
-                target_condition_modifiers[condition] = {"advantage": True}
+                target_condition_modifiers["target_blinded"] = "advantage"
             elif condition.condition == Condition.prone:
                 distance = get_distance(attacker.position, target.position)
-                mod = {"advantage": True} if distance <= 5 else {"disadvantage": True}
-                target_condition_modifiers[condition] = mod
+                mod = "advantage" if distance <= 5 else "disadvantage"
+                target_condition_modifiers["target_prone"] = mod
             elif condition.condition in {
                 Condition.restrained,
                 Condition.stunned,
                 Condition.petrified,
             }:
-                target_condition_modifiers[condition] = {"advantage": True}
+                reason = f"target_{condition.condition.name}"
+                target_condition_modifiers[reason] = "advantage"
             elif condition.condition in {Condition.paralyzed, Condition.unconscious}:
-                target_condition_modifiers[condition] = {"advantage": True}
+                target_condition_modifiers[f"target_{condition.condition.name}"] = "advantage"
+                # Auto crit on damage IF score a hit when rolling with advantage
                 auto_crit = True
 
         self.logger.log_attack_modifiers(
+            position_modifiers,
             weapon_modifiers,
             attacker_modifiers,
             attacker_condition_modifiers,
@@ -252,18 +284,19 @@ class Encounter1v1:
 
         modifiers = {}
         for modifier_set in [
+            position_modifiers,
             weapon_modifiers,
             attacker_modifiers,
             attacker_condition_modifiers,
             target_condition_modifiers,
         ]:
-            for _trait, modifier in modifier_set.items():
-                modifiers.update(modifier)
+            for cause, modifier in modifier_set.items():
+                modifiers[modifier] = cause
         return modifiers, auto_crit
 
     def _apply_damage_modifiers(
         self, attacker: Creature, attack_damage: AttackDamage
-    ) -> AttackDamage:
+    ) -> tuple[AttackDamage, list[OnRollDamageTrait]]:
         """Apply any attacker traits that modify the AttackDamage, e.g. Martial Advantage."""
         traits_applied = []
         for trait in attacker.traits:
@@ -273,22 +306,22 @@ class Encounter1v1:
                     damage_roll=attack_damage,
                     battle=self.battle,
                 )
-            if applied:
-                traits_applied.append(trait)
+                if applied:
+                    traits_applied.append(trait)
         return attack_damage, traits_applied
 
     def _apply_post_damage_traits(
-        self, target: Creature, attack_damage: AttackDamage, damage_result: DamageOutcome
+        self, target: Creature, attack_damage: AttackDamage, damage_outcome: DamageOutcome
     ) -> DamageOutcome:
         """Apply target traits that trigger after taking damage, e.g. undead fortitude."""
         for trait in target.traits:
             if isinstance(trait, OnTakeDamageTrait):
-                damage_result = trait.on_take_damage(
+                damage_outcome = trait.on_take_damage(
                     target,
                     attack_damage,
-                    damage_result,
+                    damage_outcome,
                 )
-        return damage_result
+        return damage_outcome
 
     def _apply_weapon_hit_traits(
         self, attack: Weapon, attacker: Creature, target: Creature

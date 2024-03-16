@@ -211,37 +211,35 @@ class Weapon:
 
     def __repr__(self) -> str:
         size_str = f"{self.size.name.title()} " if self.size > Size.medium else ""
-        ret = f"{size_str}{self.name.title()}:"
+        ret = f"{size_str}{self.name.title()}"
+        if self.ammunition or self.thrown:
+            ret += f" x{self.quantity}"
+        ret += ":"
         if self.is_weapon:
             if self.type in ["simple", "martial"]:
                 ret += f" {self.type}"
-        ret += f" {'melee' if self.melee else 'ranged'} weapon attack."
+        ret += f" {'melee' if self.melee else 'ranged'} weapon,"
 
         if self.melee:
-            ret += f" Reach {10 if self.reach else 5} ft"
+            ret += f" reach {10 if self.reach else 5} ft"
             if self.thrown:
-                ret += f", range {self.range[0]}/{self.range[1]} ft thrown."
+                ret += f", {self.range[0]}/{self.range[1]} ft thrown"
             else:
-                ret += "."
+                ret += ","
         else:
-            ret += f" Range {self.range[0]}/{self.range[1]} ft."
+            ret += f" range {self.range[0]}/{self.range[1]} ft"
 
         if self.damage or self.two_handed_damage or self.bonus_damage:
-            ret += " Hit: "
+            ret += " "
             if self.damage:
                 ret += repr(self.damage)
                 if self.two_handed_damage:
-                    ret += f" ({self.two_handed_damage.dice} for two-handed)"
+                    ret += f" ({self.two_handed_damage.dice} two-handed)"
             elif self.two_handed_damage:
                 ret += repr(self.two_handed_damage)
             if self.bonus_damage:
                 if self.damage or self.two_handed_damage:
                     ret += " + "
                 ret += str(self.bonus_damage)
-
-        if self.ammunition:
-            ret += f" (ammunition: {self.quantity})"
-        elif self.thrown:
-            ret += f" (quantity: {self.quantity})"
 
         return ret

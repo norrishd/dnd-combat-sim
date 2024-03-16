@@ -103,7 +103,7 @@ class DamageType(StrEnum):
 
 
 @dataclass(repr=False)
-class Point:
+class Position:
     """Class to represent a point on a grid."""
 
     x: int

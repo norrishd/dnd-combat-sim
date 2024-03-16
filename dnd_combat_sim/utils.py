@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from dnd_combat_sim.rules import Point
+from dnd_combat_sim.rules import Position
 
 # Suppress: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated
 # and will change in a future version. Call result.infer_objects(copy=False) instead.
@@ -24,7 +24,7 @@ def cr_to_float(cr: str) -> float:
     return float(cr)
 
 
-def get_distance(point1: Point, point2: Point) -> float:
+def get_distance(point1: Position, point2: Position) -> float:
     """Calculate the distance between two points."""
     return ((point1.x - point2.x) ** 2 + (point1.y - point2.y) ** 2) ** 0.5
 

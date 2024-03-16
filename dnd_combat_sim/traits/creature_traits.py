@@ -84,7 +84,10 @@ class OnRollAttackCreatureTrait(Trait):
     """ABC for traits that modify an attack roll."""
 
     @abc.abstractmethod
-    def on_roll_attack(self, creature: Creature, target: Creature, battle: Battle):
+    def on_roll_attack(
+        self, creature: Creature, target: Creature, battle: Battle
+    ) -> dict[str, str]:
+        """Return a dict of reason: modifier."""
         pass
 
 
@@ -122,7 +125,7 @@ class Grappler(OnRollAttackCreatureTrait):
         self, creature: Creature, target: Creature, battle: Battle
     ) -> dict[str, Any]:
         if battle.has_condition(target, Condition.grappled):
-            return {"advantage": True}
+            return {"target_grappled": "advantage"}
         return {}
 
 
@@ -138,7 +141,7 @@ class PackTactics(OnRollAttackCreatureTrait):
                 and get_distance(ally.position, target.position) <= 5
             ):
                 logger.debug(f"{creature.name} attacks with advantage thanks to pack tactics!")
-                return {"advantage": True}
+                return {"pack_tactics": "advantage"}
         return {}
 
 
@@ -201,34 +204,37 @@ class UndeadFortitude(OnTakeDamageTrait):
         self,
         creature: Creature,
         damage: AttackDamage,
-        damage_result: DamageOutcome,
+        damage_outcome: DamageOutcome,
     ) -> DamageOutcome:
         """If damage reduces the zombie to 0 hit points, it must make a Constitution saving throw
         with a DC of 5 + the damage taken, unless the damage is radiant or from a critical hit. On a
         success, the zombie drops to 1 hit point instead.
         """
-        if damage_result not in {DamageOutcome.knocked_out, DamageOutcome.dead}:
-            return damage_result
+        if damage_outcome not in {DamageOutcome.knocked_out, DamageOutcome.dead}:
+            return damage_outcome
 
         if damage.crit:
-            logger.debug("Undead fortitude overcome by crit")
-            return damage_result
+            logger.info("Undead fortitude overcome by crit")
+            return damage_outcome
         if DamageType.radiant in damage.damages:
-            logger.debug("Undead fortitude overcome by radiant damage")
-            return damage_result
+            logger.info("Undead fortitude overcome by radiant damage")
+            return damage_outcome
 
-        save = creature.roll_saving_throw(Ability.con)
+        # if creature.hp == 0 or damage_outcome != DamageOutcome.alive:
+        #     breakpoint()
         dc = 5 + damage.total
+        save = creature.roll_saving_throw(Ability.con)
         if save >= dc:
             creature.heal(1)
-            logger.debug(
+            logger.info(
                 f"{creature.name} passed DC {dc} undead fortitude const save with a {save} and "
                 "reanimated! "
             )
             return DamageOutcome.reanimated
 
-        logger.debug(f"{creature.name} failed DC {dc} undead fortitude const save with a {save}.")
-        return damage_result
+        logger.info(f"{creature.name} failed DC {dc} undead fortitude const save with a {save}.")
+
+        return damage_outcome
 
 
 TRAITS = {

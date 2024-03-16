@@ -15,7 +15,7 @@ from dnd_combat_sim.rules import (
     Condition,
     CreatureType,
     DamageOutcome,
-    Point,
+    Position,
     Sense,
     Size,
     Skill,
@@ -65,7 +65,7 @@ class Creature:
         make_death_saves: bool = False,
         num_attacks: int = 1,
         num_hands: int = 2,
-        position: Point = Point(0, 0),
+        position: Position = Position(0, 0),
         proficiency: Optional[int] = None,  # Can be inferred from CR
         resistances: Optional[Collection[DamageType]] = None,
         save_proficiencies: Optional[Collection[Union[Ability, str]]] = None,
@@ -159,9 +159,7 @@ class Creature:
             Weapon.init(attack, size=self.size) if not isinstance(attack, Weapon) else attack
             for attack in attacks
         ]
-        self._melee_weapons = [attack for attack in self.weapons if attack.melee]
-        self._ranged_weapons = [attack for attack in self.weapons if not attack.melee]
-        self.weapons.append(Weapon.init("unarmed_strike"))
+        # self.weapons.append(Weapon.init("unarmed_strike"))
         self.cond_immunities = cond_immunities or set()
         self.creature_subtype = creature_subtype
         self.creature_type = creature_type
@@ -209,6 +207,10 @@ class Creature:
         self.temp_hp: int = 0
         self.death_saves: dict[str, int] = {"successes": 0, "failures": 0}
 
+        self._melee_weapons = [attack for attack in self.weapons if attack.melee]
+        self._ranged_weapons = [attack for attack in self.weapons if not attack.melee]
+        self._best_melee_weapon = self._set_best_melee_weapon()
+
     @classmethod
     def init(
         cls,
@@ -230,7 +232,7 @@ class Creature:
         ]
         stats["creature_type"] = CreatureType[stats["creature_type"]]
         stats["make_death_saves"] = make_death_saves
-        stats["position"] = Point(start_x, 0)
+        stats["position"] = Position(start_x, 0)
         if stats["senses"]:
             stats["senses"] = [Sense[sense] for sense in stats["senses"].split(",")]
 
@@ -248,9 +250,9 @@ class Creature:
 
         return cls(**stats)
 
-    @property
-    def best_melee_weapon(self):
+    def _set_best_melee_weapon(self):
         """Reserved weapon for melee attacks that shouldn't be thrown."""
+        logger.debug(f"{self.name} start best_melee_weapon()")
         best_melee_damage = 0
         best_melee_weapon = None
         for weapon, expected_damage in self._get_expected_damages(self._melee_weapons):
@@ -271,7 +273,8 @@ class Creature:
 
         For now just attack if possible, else dash toward nearest enemy.
         """
-        # available_actions = ["dash", "disengage", "dodge", "hide", "search"]
+        logger.debug(f"{self.name} start choose_action()")
+        # available_actions = ["disengage", "dodge", "hide", "search"]
         _closest_targets, distance = self._get_closest_enemies(targets)
 
         if self._can_attack(distance):
@@ -287,13 +290,14 @@ class Creature:
 
         return action, bonus_action
 
-    def choose_attack(self, targets: list[Creature]) -> tuple[Creature, Weapon, bool]:
+    def choose_attack(self, targets: list[Creature]) -> Optional[tuple[Creature, Weapon, bool]]:
         """Choose a target to attack, a weapon to use, and whether to throw it (if melee)."""
+        logger.debug(f"{self.name} start choose_attack()")
         target = random.choice(targets)
         distance = get_distance(self.position, target.position)
 
         attack_options = self._get_attack_options(distance=distance)
-        melee_options = [opt for opt in attack_options if opt[0].range is None]
+        melee_options = [opt for opt in attack_options if opt[0].melee]
         ranged_options = [opt for opt in attack_options if opt[0].range is not None]
 
         # If in melee range, only use ranged weapons that trump any melee option
@@ -302,18 +306,18 @@ class Creature:
             ranged_options = [opt for opt in ranged_options if opt[1] > best_melee_damage]
 
         attack_options = melee_options + ranged_options
-        try:
-            expected_damages = [attack[1] for attack in attack_options]
-        except IndexError:
-            breakpoint()
+        if not attack_options:
+            return None
+
+        expected_damages = [attack[1] for attack in attack_options]
         weapon_choice = random.choices(melee_options + ranged_options, weights=expected_damages)[0]
 
         return target, weapon_choice[0], weapon_choice[2]
 
-    def choose_movement(self, enemies: list[Creature]) -> Optional[Point]:
+    def choose_movement(self, enemies: list[Creature]) -> tuple[Optional[Position], int]:
         """Plan where to move before taking an attack action.
 
-        Return a new Point or None to indicate no movement.
+        Return a new Position or None to indicate no movement, plus the distance to move.
 
         Uses a strategy that aims to fulfil the following principles:
         1. Always attack the nearest enemy
@@ -321,20 +325,22 @@ class Creature:
         3. Prioritise doing the most expected damage
         4. Always be prepared for melee combat
         """
+        logger.debug(f"{self.name} start choose_movement()")
         if self.remaining_movement == 0:
             logger.debug("No more movement, staying")
-            return None
+            return None, 0
 
         # Choose closest target to attack (P1)
         enemies, distance = self._get_closest_enemies(enemies)
         if distance <= 5:  # If in melee range of any enemy, don't move (P1, P2)
             logger.debug(f"Already in melee range ({distance}), staying")
-            return None
+            return None, 0
 
         ideal_distance = None
         if distance <= 10:
             in_enemy_reach = any(weapon.reach for enemy in enemies for weapon in enemy.weapons)
             if in_enemy_reach:
+                logger.debug(f"In enemy reach range ({distance}), deciding between 5ft and 10ft")
                 # Decide whether to close in for 5ft melee or attack from 10 ft
                 attack_options_5_ft = self._get_attack_options(10)
                 attack_options_10_ft = self._get_attack_options(10)
@@ -354,30 +360,40 @@ class Creature:
         if ideal_distance is None:
             # If not in enemy melee range, figure out the ideal distance to be (P1, P3)
             # Just move in the x direction for now
+            logger.debug(f"{self.name} choosing movement by finding ideal distance")
             ideal_distance = self._get_ideal_distance()
 
         target = random.choice(enemies)
         # E.g. currently 30 ft away, want to be 5 ft away -> move 25 ft closer
-        ideal_movement_toward_enemy = distance - ideal_distance
-        movement_toward_enemy = min(ideal_movement_toward_enemy, self.remaining_movement)
-        if target.position.x < self.position.x:
-            movement_toward_enemy = -movement_toward_enemy
+        ideal_movement = distance - ideal_distance  # Positive for toward enemy, negative for away
+        max_movement = int(min(abs(ideal_movement), self.remaining_movement))
+        movement = -max_movement if ideal_movement < 0 else max_movement
 
-        logger.debug(f"Moving {movement_toward_enemy} ft toward {target.name}")
-        return Point(self.position.x + movement_toward_enemy, self.position.y)
+        direction = "towards" if movement > 0 else "away from"
+        logger.debug(f"Movement chosen: {abs(movement)} ft {direction} {target.name}")
+        value = movement if self.position.x < target.position.x else -movement
+        # if self.name.lower() == "skeleton" and abs(movement) > 30:
+        #     breakpoint()
+        return Position(self.position.x + value, self.position.y), movement
 
-    def get_damage_taken(self, attack_damage: AttackDamage) -> AttackDamage:
+    def get_damage_taken(
+        self, attack_damage: AttackDamage
+    ) -> tuple[AttackDamage, dict[DamageType:str]]:
         """Apply immunities, resistances and vulnerabilities to update attack damage."""
+        modifiers_applied = {}
         attack_damage = deepcopy(attack_damage)
         for dtype in attack_damage.damages:
             if dtype in self.immunities:
                 attack_damage.damages.pop(dtype)
+                modifiers_applied[dtype] = "immune"
             elif dtype in self.vulnerabilities:
                 attack_damage.damages[dtype] *= 2
+                modifiers_applied[dtype] = "vulnerable"
             elif dtype in self.resistances:
                 attack_damage.damages[dtype] //= 2
+                modifiers_applied[dtype] = "resistant"
 
-        return attack_damage
+        return attack_damage, modifiers_applied
 
     def heal(self, amount: int, wake_up: bool = True) -> None:
         """Recover hit points."""
@@ -387,10 +403,18 @@ class Creature:
         if wake_up:
             self.conditions.discard(Condition.unconscious)
 
-    def move(self, new_position: Point) -> None:
+    def move(self, new_position: Position) -> None:
         """Move the creature a given location."""
         from_pos = self.position
         self.position = new_position
+        distance = get_distance(from_pos, new_position)
+        if distance > self.remaining_movement:
+            raise ValueError(
+                f"Trying to move {distance} ft from {from_pos} -> {new_position}, but "
+                f"only have {self.remaining_movement} ft left"
+            )
+        else:
+            self.remaining_movement -= distance
         logger.debug(f"{self.name} moved from {from_pos} to {new_position}")
 
     def roll_attack(
@@ -407,8 +431,8 @@ class Creature:
         if not weapon.melee or thrown:
             weapon.quantity -= 1
             if weapon.quantity == 0:
-                span = "ammo for" if weapon.ammunition else ""
-                logger.debug(f"{self.name} using up last {span} {weapon.name}!")
+                span = " ammo for" if weapon.ammunition else ""
+                logger.info(f"{self.name}'s last{span} {weapon.name}")
 
         # Roll to attack
         rolled = roll_d20(advantage=advantage, disadvantage=disadvantage)
@@ -568,9 +592,7 @@ class Creature:
         # Check whether can move into melee attack range
         min_range = distance - self.remaining_movement
         usable_weapons = self._usable_weapons(self.weapons, distance_from_target=min_range)
-        if usable_weapons:
-            logger.debug(f"{self.name} can use {usable_weapons} at {distance} ft")
-        else:
+        if not usable_weapons:
             logger.debug(f"{self.name} has no usable weapons at {distance} ft")
 
         return len(usable_weapons) > 0
@@ -620,58 +642,25 @@ class Creature:
 
         Return a list of tuples of (weapon, expected damage, whether requires ammo/throwing).
         """
+        logger.debug(f"{self.name} start _get_attack_options({distance=})")
         attack_options = []
 
         # Expected damage for all weapons, assume no disadvantage
-        if distance is None:
-            for weapon, expected_damage in self._get_expected_damages(self.weapons):
+        if distance is None or distance <= 5:
+            for weapon, expected_damage in self._get_expected_damages(
+                self.weapons, distance=distance
+            ):
                 attack_options.append((weapon, expected_damage, False))
-                logger.debug(
-                    f"{self.name} can use {weapon.name} for {expected_damage} average damage"
-                )
             return attack_options
 
-        # Expected damage assuming melee - ranged attacks made with disadvantage
-        if distance == 5:
-            for weapon, expected_damage in self._get_expected_damages(self.weapons):
-                if not weapon.melee:
-                    expected_damage /= 2
-                attack_options.append((weapon, expected_damage, False))
-                logger.debug(
-                    f"{self.name} can use {weapon.name} for {expected_damage} average melee damage"
-                )
-            return attack_options
-
-        # Identify a best melee weapon to safekeeping
-        best_melee_damage = 0
-        best_melee_weapon = None
-        reach_weapons = []
-        for weapon, expected_damage in self._get_expected_damages(self._melee_weapons):
+        # Expected damage for range/thrown/reach weapons, possibly made with disadvantage
+        for weapon, expected_damage in self._get_expected_damages(self.weapons, distance=distance):
             if distance <= 10 and weapon.reach:
                 attack_options.append((weapon, expected_damage, False))
-                logger.debug(
-                    f"{self.name} can use {weapon.name} for {expected_damage} average reach damage"
-                )
-                reach_weapons.append(weapon)
-            if expected_damage > best_melee_damage:
-                best_melee_damage = expected_damage
-                best_melee_weapon = weapon
-            elif expected_damage == best_melee_damage:
-                # If find an equally good weapon that also has reach or can't be thrown, keep it
-                if weapon.reach:
-                    best_melee_weapon = weapon
-                elif not weapon.thrown:
-                    best_melee_weapon = weapon
-
-        # Add all valid ranged/thrown attacks
-        for weapon, expected_damage in self._get_expected_damages(self.weapons, distance=distance):
-            # Don't throw away best melee weapon, or throw if can use reach
-            if weapon == best_melee_weapon or weapon in reach_weapons:
-                logger.debug(f"Skipping {weapon.name} ({best_melee_weapon=}, {reach_weapons=})")
-                continue
-            if weapon.range[0] < distance:
-                expected_damage /= 2
-            attack_options.append((weapon, expected_damage, True))
+            else:  # Ranged or throwable weapons
+                if weapon == self._best_melee_weapon and self._best_melee_weapon.quantity == 1:
+                    continue
+                attack_options.append((weapon, expected_damage, weapon.thrown))
 
         return attack_options
 
@@ -681,6 +670,8 @@ class Creature:
         closest_targets = []
 
         for enemy in enemies:
+            if not isinstance(self.position, Position) or not isinstance(enemy.position, Position):
+                breakpoint()
             distance = get_distance(self.position, enemy.position)
             if closest_distance is None or distance < closest_distance:
                 closest_distance = distance
@@ -701,6 +692,7 @@ class Creature:
         If weapon has a special trait, raise its expected damage to equal whichever weapon has the
         highest raw expected damage.
         """
+        logger.debug(f"{self.name} Getting expected damages for {weapons=} for {distance=}")
         two_handed = self._get_num_free_hands() >= 2
         usable_weapons = self._usable_weapons(weapons, distance_from_target=distance)
         if not usable_weapons:
@@ -752,25 +744,30 @@ class Creature:
 
     def _get_ideal_distance(self) -> float:
         """Compute ideal distance from nearest enemy to maximise expected damage dealt."""
+        logger.debug(f"{self.name} start _get_ideal_distance()")
         ideal_weapon = None
         ideal_distance = 5
         max_expected_damage = 0
 
         for weapon, expected_damage in self._get_expected_damages(self.weapons):
             if expected_damage > max_expected_damage:
+                logger.debug(f"New ideal weapon: {weapon.name}, {expected_damage=}")
                 ideal_weapon = weapon
                 max_expected_damage = expected_damage
-                if weapon == self.best_melee_weapon or weapon.range is None:
+                if weapon == self._best_melee_weapon or weapon.range is None:
                     ideal_distance = 10 if weapon.reach else 5
                 elif weapon.range is not None:
                     ideal_distance = weapon.range[0]
             elif expected_damage == max_expected_damage:
-                ideal_weapon = weapon
                 # If have a weapon with equal damage but allows distance, use that
-                if (weapon.range is not None) and (weapon != self.best_melee_weapon):
+                if (weapon.range is not None) and (weapon != self._best_melee_weapon):
+                    ideal_weapon = weapon
                     ideal_distance = max(ideal_distance, weapon.range[0])
+                    logger.debug(f"New ideal ranged weapon: {weapon.name}, {expected_damage=}")
                 elif weapon.reach:
+                    ideal_weapon = weapon
                     ideal_distance = max(ideal_distance, 10)
+                    logger.debug(f"New ideal reach weapon: {weapon.name}, {expected_damage=}")
 
         logger.debug(
             f"Ideal distance is {ideal_distance} ft for {ideal_weapon}, {max_expected_damage=}"
@@ -868,8 +865,8 @@ class Creature:
                 if distance_from_target > max_range:
                     continue
             usable_weapons.append(weapon)
-
+        logger.debug(f"{self.name} Usable weapons: {usable_weapons} {distance_from_target=}")
         return usable_weapons
 
     def __repr__(self) -> str:
-        return f"{self.name}: {self.hp}/{self.max_hp} hp {self.position}"
+        return f"{self.name}: {self.hp}/{self.max_hp} hp at {self.position}"

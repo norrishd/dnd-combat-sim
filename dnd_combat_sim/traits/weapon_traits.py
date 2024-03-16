@@ -24,8 +24,11 @@ class OnRollAttackWeaponTrait(WeaponTrait):
     """Base class for traits that modify an weapon roll."""
 
     @abc.abstractmethod
-    def on_roll_attack(self, attacker: Creature, target: Creature) -> dict[str, bool]:
-        """Modify the attack roll, e.g. impose disadvantage on the attack roll."""
+    def on_roll_attack(self, attacker: Creature, target: Creature) -> dict[str, str]:
+        """Modify the attack roll, e.g. impose disadvantage on the attack roll.
+
+        Return a reason and a modifier, e.g. "advantage" or "disadvantage"
+        """
 
 
 class OnHitWeaponTrait(WeaponTrait):
@@ -65,9 +68,9 @@ class Adhesive(OnHitWeaponTrait):
 class Lance(OnRollAttackWeaponTrait):
     """Lance martial weapon. Has disadvantage when attacking within 5ft."""
 
-    def on_roll_attack(self, attacker: Creature, target: Creature) -> dict[str, bool]:
+    def on_roll_attack(self, attacker: Creature, target: Creature) -> dict[str, str]:
         if get_distance(attacker, target) <= 5:
-            return {"disadvantage": True}
+            return {"lance @ 5 ft": "disadvantage"}
         return {}
 
 
