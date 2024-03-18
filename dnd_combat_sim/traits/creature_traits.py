@@ -244,16 +244,3 @@ TRAITS = {
     "rampage": Rampage,
     "undead_fortitude": UndeadFortitude,
 }
-
-
-def attach_traits(creature: Creature) -> None:
-    """Helper function to instantiated and attach traits to creatures.
-
-    To avoid circular import of traits.py <-> creature.py, must attach outside of creature.py.
-    """
-    instantiated_traits = []
-    for trait_name, trait in TRAITS.items():
-        if trait_name in creature.traits:
-            instantiated_traits.append(trait())
-
-    creature.traits = instantiated_traits

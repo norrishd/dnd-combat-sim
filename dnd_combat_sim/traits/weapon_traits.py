@@ -91,21 +91,3 @@ class Net(OnHitWeaponTrait):
 
 
 ATTACK_TRAITS = {"adhesive": Adhesive, "lance": Lance, "net": Net}
-
-
-def attach_weapon_traits(attack: Weapon) -> None:
-    """Helper function to instantiated and attach traits to attacks.
-
-    To avoid circular import of traits.py <-> attacks.py, must attach outside of attacks.py.
-    """
-    instantiated_traits = []
-    for trait_name, trait in ATTACK_TRAITS.items():
-        if attack.traits is not None and trait_name in attack.traits:
-            instantiated_traits.append(trait())
-
-    if attack.traits is not None:
-        missing_traits = set(attack.traits) - ATTACK_TRAITS.keys()
-        if missing_traits:
-            logger.warning("Skipping unimplemented traits")
-
-    attack.traits = instantiated_traits

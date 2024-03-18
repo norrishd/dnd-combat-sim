@@ -43,17 +43,19 @@ def update_graph(monster_name: Optional[str], logs: str):
     """Create monsters."""
     global encounter
 
-    print(monster_name)
-
-    if monster_name is None or encounter.creatures[1] is not None:
-        return no_update
-
-    start_x = 0 if encounter.creatures[0] is None else 100
-    monster = Creature.init(monster_name, start_x=start_x)
     if not logs:
         logs = []
     else:
         logs = [logs]
+
+    if monster_name is None:
+        return no_update, no_update
+    if encounter.creatures[1] is not None:
+        logs.append("Encounter full, remove a creature first.")
+        return no_update, [html.Span(line, style={"display": "block"}) for line in logs]
+
+    start_x = 0 if encounter.creatures[0] is None else 100
+    monster = Creature.init(monster_name, start_x=start_x)
     logs.append(f"Added {monster.name} to the encounter.")
 
     encounter.add_creature(monster)

@@ -9,13 +9,13 @@ from dnd_combat_sim.rules import DamageOutcome
 from dnd_combat_sim.traits.weapon_traits import (
     OnHitWeaponTrait,
     OnRollAttackWeaponTrait,
-    attach_weapon_traits,
+    ATTACK_TRAITS,
 )
 from dnd_combat_sim.traits.creature_traits import (
     OnRollAttackCreatureTrait,
     OnRollDamageTrait,
     OnTakeDamageTrait,
-    attach_traits,
+    TRAITS,
 )
 from dnd_combat_sim.utils import get_distance
 from dnd_combat_sim.weapon import Weapon, AttackDamage, AttackRoll
@@ -31,13 +31,47 @@ class Encounter1v1:
 
         self.battle = None
         self.creatures: list[Optional[Creature]] = [creature1, creature2]
-        if all(isinstance(creature, Creature) for creature in self.creatures):
-            self.battle = Battle([Team("team1", {creature1}), Team("team2", {creature2})])
 
-        # for creature in self.creatures:
-        #     attach_traits(creature)
-        #     for attack in creature.weapons:
-        #         attach_weapon_traits(attack)
+        self.creature_traits = {}
+        self.weapon_traits = {}
+        self.conditions = {}
+
+        if all(isinstance(creature, Creature) for creature in self.creatures):
+            self.prepare_encounter()
+
+    def prepare_encounter(self):
+        if all(isinstance(creature, Creature) for creature in self.creatures):
+            self.battle = Battle(
+                [Team("team1", {self.creatures[0]}), Team("team2", {self.creatures[1]})]
+            )
+        for creature in self.creatures:
+            for trait_name in creature.traits or []:
+                trait = TRAITS.get(trait_name)
+                if trait is None:
+                    logger.warning(f"Trait {trait_name} not implement.")
+                    continue
+                else:
+                    trait = trait()
+
+                if creature not in self.creature_traits:
+                    self.creature_traits[creature] = [trait]
+                else:
+                    self.creature_traits[creature].append(trait)
+            for attack in creature.weapons:
+                for trait_name in attack.traits or []:
+                    trait = ATTACK_TRAITS.get(trait_name)
+                    if trait is None:
+                        logger.warning(f"Trait {trait_name} not implement.")
+                        continue
+                    else:
+                        trait = trait()
+
+                    if creature not in self.weapon_traits:
+                        self.weapon_traits[creature] = {}
+                    if attack not in self.weapon_traits[creature]:
+                        self.weapon_traits[creature][attack] = [trait]
+                    else:
+                        self.weapon_traits[creature][attack].append(trait)
 
     def add_creature(self, creature: Creature) -> None:
         """Add a creature to the encounter."""
@@ -45,6 +79,7 @@ class Encounter1v1:
             self.creatures[0] = creature
         elif self.creatures[1] is None:
             self.creatures[1] = creature
+            self.prepare_encounter()
         else:
             raise ValueError("Encounter is already full.")
 
@@ -207,7 +242,7 @@ class Encounter1v1:
         return True
 
     def _get_attack_modifiers(
-        self, attack: Weapon, attacker: Creature, target: Creature
+        self, weapon: Weapon, attacker: Creature, target: Creature
     ) -> tuple[dict[str, str], bool]:
         """Get modifiers to an attack role, i.e. advantage or disadvantage, and whether the damage
         roll should be an auto-crit upon hitting.
@@ -228,17 +263,18 @@ class Encounter1v1:
         position_modifiers = {}
         distance = get_distance(attacker.position, target.position)
         if distance <= 5:
-            if not attack.melee:
+            if not weapon.melee:
                 position_modifiers["ranged_in_melee"] = "disadvantage"
-        elif attack.range is not None:
-            if attack.range[0] < distance <= attack.range[1]:
+        elif weapon.range is not None:
+            if weapon.range[0] < distance <= weapon.range[1]:
                 position_modifiers["long_range"] = "disadvantage"
-            elif distance > attack.range[1]:
+            elif distance > weapon.range[1]:
                 raise ValueError(f"{attacker.name} is too far from {target.name} to attack")
 
         # Resolve modifiers from attack traits
         weapon_modifiers = {}
-        for trait in attack.traits:
+        for trait_name in weapon.traits:
+            trait = self.weapon_traits[attacker][weapon][trait_name]
             if isinstance(trait, OnRollAttackWeaponTrait):
                 reason, modifier = trait.on_roll_attack(
                     attacker=attacker,
@@ -248,7 +284,8 @@ class Encounter1v1:
                     weapon_modifiers[reason] = modifier
         # Resolve modifiers from creature traits
         attacker_modifiers = {}
-        for trait in attacker.traits:
+        for trait_name in attacker.traits:
+            trait = self.creature_traits[attacker][trait_name]
             if isinstance(trait, OnRollAttackCreatureTrait):
                 true_or_false = trait.on_roll_attack(
                     attacker,
@@ -316,7 +353,8 @@ class Encounter1v1:
     ) -> tuple[AttackDamage, list[OnRollDamageTrait]]:
         """Apply any attacker traits that modify the AttackDamage, e.g. Martial Advantage."""
         traits_applied = []
-        for trait in attacker.traits:
+        for trait_name in attacker.traits:
+            trait = self.creature_traits[attacker][trait_name]
             if isinstance(trait, OnRollDamageTrait):
                 attack_damage, applied = trait.on_roll_damage(
                     attacker,
@@ -331,7 +369,8 @@ class Encounter1v1:
         self, target: Creature, attack_damage: AttackDamage, damage_outcome: DamageOutcome
     ) -> DamageOutcome:
         """Apply target traits that trigger after taking damage, e.g. undead fortitude."""
-        for trait in target.traits:
+        for trait_name in target.traits:
+            trait = self.creature_traits[target][trait_name]
             if isinstance(trait, OnTakeDamageTrait):
                 damage_outcome = trait.on_take_damage(
                     target,
@@ -346,7 +385,8 @@ class Encounter1v1:
         """Apply any attack (weapon) traits that deal special effects on a hit."""
         conditions = []
         if attack.traits is not None:
-            for trait in attack.traits:
+            for trait_name in attack.traits:
+                trait = self.weapon_traits[attacker][attack][trait_name]
                 if isinstance(trait, OnHitWeaponTrait):
                     result = trait.on_attack_hit(attacker, target)
                     if result is not None:
