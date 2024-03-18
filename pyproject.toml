@@ -6,14 +6,17 @@ authors = ["David Norrish <norrish.d@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
-pandas = "^2.2.1"
 dash = "^2.16.1"
+dash-bootstrap-components = "^1.5.0"
+pandas = "^2.2.1"
+plotly = "^5.20.0"
+python = "^3.10"
 
 [tool.poetry.group.dev.dependencies]
+ipython = "^8.22.2"
+pdbpp = "^0.10.3"
 pytest = "^8.0.2"
 ruff = "^0.3.1"
-pdbpp = "^0.10.3"
 
 [tool.pylint."MESSAGES CONTROL"]
 disable = "logging-fstring-interpolation"

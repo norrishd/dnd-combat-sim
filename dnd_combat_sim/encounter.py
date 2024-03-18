@@ -26,15 +26,32 @@ logger = logging.getLogger(__name__)
 class Encounter1v1:
     """Class to manage an encounter between two creatures."""
 
-    def __init__(self, creature1: Creature, creature2: Creature):
+    def __init__(self, creature1: Optional[Creature] = None, creature2: Optional[Creature] = None):
         self.logger = EncounterLogger()
 
-        self.battle = Battle([Team("team1", {creature1}), Team("team2", {creature2})])
-        self.creatures = [creature1, creature2]
-        for creature in self.creatures:
-            attach_traits(creature)
-            for attack in creature.weapons:
-                attach_weapon_traits(attack)
+        self.battle = None
+        self.creatures: list[Optional[Creature]] = [creature1, creature2]
+        if all(isinstance(creature, Creature) for creature in self.creatures):
+            self.battle = Battle([Team("team1", {creature1}), Team("team2", {creature2})])
+
+        # for creature in self.creatures:
+        #     attach_traits(creature)
+        #     for attack in creature.weapons:
+        #         attach_weapon_traits(attack)
+
+    def add_creature(self, creature: Creature) -> None:
+        """Add a creature to the encounter."""
+        if self.creatures[0] is None:
+            self.creatures[0] = creature
+        elif self.creatures[1] is None:
+            self.creatures[1] = creature
+        else:
+            raise ValueError("Encounter is already full.")
+
+        if all(isinstance(creature, Creature) for creature in self.creatures):
+            self.battle = Battle(
+                [Team("team1", {self.creatures[0]}), Team("team2", {self.creatures[1]})]
+            )
 
     def run_encounter(self, max_rounds: int = 10) -> Optional[Creature]:
         """Run an encounter between two creatures to the death, returning the winner."""
@@ -368,4 +385,4 @@ class MultiEncounter1v1:
         if self.num_runs > 1:
             print("\n")
             for creature, wins in self.wins.items():
-                print(f"{creature}: {wins} win(s)")
+                print(f"{creature}: {wins} {'win(s)' if creature != 'Stalemate' else ''}")

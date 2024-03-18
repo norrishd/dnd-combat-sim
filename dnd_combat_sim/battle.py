@@ -1,5 +1,7 @@
 import logging
 from collections import defaultdict
+from typing import Optional
+
 from dnd_combat_sim.conditions import TempCondition
 from dnd_combat_sim.creature import Creature
 from dnd_combat_sim.rules import Condition
@@ -8,9 +10,19 @@ logger = logging.getLogger(__name__)
 
 
 class Team:
-    def __init__(self, name: str, creatures: set[Creature]) -> None:
+    """Class to contain several creatures on a team together."""
+
+    def __init__(self, name: str, creatures: Optional[set[Creature]] = None) -> None:
         self.name = name
-        self.creatures = set(creatures)
+        self.creatures = set(creatures) if creatures else set()
+
+    def add_creature(self, creature: Creature) -> None:
+        """Add a creature to the team."""
+        self.creatures.add(creature)
+
+    def remove_creature(self, creature: Creature) -> None:
+        """Remove a creature from the team."""
+        self.creatures.remove(creature)
 
 
 class Battle:
